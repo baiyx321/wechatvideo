@@ -60,8 +60,10 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_button_secondary"
                 android:text="@string/block_back"
-                style="@style/Widget.Material3.Button.OutlinedButton" />
+                android:textColor="#666666"
+                android:textSize="16sp" />
 
             <Button
                 android:id="@+id/submitButton"
@@ -69,7 +71,10 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="8dp"
-                android:text="@string/block_submit" />
+                android:background="@drawable/bg_button_primary"
+                android:text="@string/block_submit"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

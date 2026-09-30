@@ -7,6 +7,7 @@ import android.text.TextWatcher
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -43,13 +44,22 @@ class BlockingOverlay(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                0,  // 不添加flags,使用默认行为
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.CENTER
+                // 确保window可以接收触摸
+                format = PixelFormat.TRANSLUCENT
             }
             
-            val container = FrameLayout(context)
+            val container = FrameLayout(context).apply {
+                isClickable = true
+                isFocusable = false
+                setOnTouchListener { v, event ->
+                    Log.d(TAG, "容器收到触摸事件: action=${event.action}, x=${event.x}, y=${event.y}")
+                    false  // 不拦截,让子view处理
+                }
+            }
             
             overlayContent = LayoutInflater.from(context).inflate(R.layout.overlay_blocking, container, false)
             container.addView(overlayContent)
@@ -100,19 +110,48 @@ class BlockingOverlay(
         // 提交按钮
         submitButton.setOnClickListener {
             val content = inputText.text.toString()
+            Log.d(TAG, "提交按钮被点击,内容长度: ${content.length}, 最小要求: $minChars")
             if (content.length >= minChars) {
                 Log.d(TAG, "用户提交反思,长度: ${content.length}")
                 historyManager.saveEntry(ReflectionEntry(content = content))
                 hide()
                 onDismiss(true)
+            } else {
+                Log.d(TAG, "内容不足,无法提交")
             }
         }
         
         // 返回按钮
         backButton.setOnClickListener {
-            Log.d(TAG, "用户点击返回")
+            Log.d(TAG, "返回按钮被点击")
             hide()
             onDismiss(false)
+        }
+        
+        // 添加OnLayoutChangeListener来记录按钮位置
+        submitButton.addOnLayoutChangeListener { v, left, top, right, bottom, _, _, _, _ ->
+            val location = IntArray(2)
+            v.getLocationOnScreen(location)
+            Log.d(TAG, "提交按钮位置: screen=(${location[0]},${location[1]}), bounds=($left,$top,$right,$bottom), size=${right-left}x${bottom-top}")
+            Log.d(TAG, "提交按钮状态: enabled=${v.isEnabled}, clickable=${v.isClickable}, focusable=${v.isFocusable}, visibility=${v.visibility}")
+        }
+        
+        backButton.addOnLayoutChangeListener { v, left, top, right, bottom, _, _, _, _ ->
+            val location = IntArray(2)
+            v.getLocationOnScreen(location)
+            Log.d(TAG, "返回按钮位置: screen=(${location[0]},${location[1]}), bounds=($left,$top,$right,$bottom), size=${right-left}x${bottom-top}")
+            Log.d(TAG, "返回按钮状态: enabled=${v.isEnabled}, clickable=${v.isClickable}, focusable=${v.isFocusable}, visibility=${v.visibility}")
+        }
+        
+        // 给提交按钮添加touch listener来调试
+        submitButton.setOnTouchListener { v, event ->
+            Log.d(TAG, "提交按钮收到触摸: action=${event.action}, x=${event.x}, y=${event.y}")
+            false  // 让onClick处理
+        }
+        
+        backButton.setOnTouchListener { v, event ->
+            Log.d(TAG, "返回按钮收到触摸: action=${event.action}, x=${event.x}, y=${event.y}")
+            false
         }
     }
     
