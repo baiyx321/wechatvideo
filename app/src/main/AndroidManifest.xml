@@ -38,17 +38,6 @@
             android:exported="false"
             android:label="@string/debug_calibration" />
         
-        <!-- 仅用于Debug构建的测试Activity -->
-        <activity
-            android:name=".TestFinderActivity"
-            android:exported="true"
-            android:label="测试视频号页面">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
-        
         <service
             android:name=".service.WeChatBlockerService"
             android:exported="false"

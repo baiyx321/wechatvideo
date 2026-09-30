@@ -73,7 +73,9 @@ class WeChatBlockerService : AccessibilityService() {
             if (shouldBlock && !isCurrentlyBlocking) {
                 showBlockingOverlay()
             } else if (!shouldBlock && isCurrentlyBlocking) {
-                hideBlockingOverlay()
+                // 不要因为新事件而隐藏覆盖层
+                // 覆盖层只应该在用户操作后隐藏
+                Log.d(TAG, "检测到不需拦截但覆盖层在显示中,保持显示")
             }
             
         } catch (e: Exception) {

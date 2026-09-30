@@ -112,11 +112,30 @@ cd wechatvideo
 # 运行测试
 ./gradlew test
 
-# 构建APK
-./gradlew assembleDebug
+# 构建主应用APK
+./gradlew :app:assembleDebug
 
-# 输出: app/build/outputs/apk/debug/app-debug.apk
+# 构建测试用假微信APK
+./gradlew :fakewechat:assembleDebug
+
+# 输出: 
+# app/build/outputs/apk/debug/app-debug.apk
+# fakewechat/build/outputs/apk/debug/fakewechat-debug.apk
 ```
+
+### 测试
+
+为了测试拦截功能,项目包含一个独立的假微信APK (`fakewechat`):
+- 包名: `com.wechatblocker.fakewechat`
+- Activity: `FinderHomeUI` (模拟视频号类名)
+- 包含"视频号"、"关注"、"朋友"、"推荐"等关键词
+
+**测试步骤**:
+1. 安装两个APK
+2. 启用无障碍服务
+3. 打开"假微信视频号"应用
+4. 应该看到拦截覆盖层
+5. 测试输入、提交、历史记录等功能
 
 ### 技术栈
 

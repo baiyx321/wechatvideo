@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "WeChatVideoBlocker"
 include(":app")
+include(":fakewechat")

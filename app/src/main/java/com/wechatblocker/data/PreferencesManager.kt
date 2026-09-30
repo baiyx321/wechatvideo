@@ -22,7 +22,7 @@ class PreferencesManager(context: Context) {
         const val DEFAULT_PROMPTS = "我为什么要刷视频?\n我现在本该做什么?"
         const val DEFAULT_CLASS_KEYWORDS = "finder,FinderHomeUI,FinderUI"
         const val DEFAULT_TEXT_KEYWORDS = "视频号,关注,朋友,推荐"
-        const val DEFAULT_TARGET_PACKAGES = "com.tencent.mm"
+        const val DEFAULT_TARGET_PACKAGES = "com.tencent.mm,com.wechatblocker.fakewechat"
     }
     
     var minChars: Int
