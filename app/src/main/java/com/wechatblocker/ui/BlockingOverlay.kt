@@ -26,8 +26,13 @@ class BlockingOverlay(
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val historyManager = HistoryManager(context)
-    private var overlayView: View? = null
+    var overlayView: View? = null
+        private set
     private var overlayContent: View? = null
+    
+    // 保存pending状态
+    private var pendingPrompt: String? = null
+    private var pendingTypedText: String = ""
     
     companion object {
         private const val TAG = "BlockingOverlay"
@@ -44,13 +49,12 @@ class BlockingOverlay(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                0,  // 不添加flags,使用默认行为
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.CENTER
-                // 确保window可以接收触摸
                 format = PixelFormat.TRANSLUCENT
-                // 键盘弹出时调整窗口大小
                 softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
             }
             
@@ -59,7 +63,7 @@ class BlockingOverlay(
                 isFocusable = false
                 setOnTouchListener { v, event ->
                     Log.d(TAG, "容器收到触摸事件: action=${event.action}, x=${event.x}, y=${event.y}")
-                    false  // 不拦截,让子view处理
+                    false
                 }
             }
             
@@ -70,7 +74,7 @@ class BlockingOverlay(
             setupOverlayView(overlayContent!!)
             
             windowManager.addView(container, layoutParams)
-            overlayView = container  // 保存container引用用于后续移除
+            overlayView = container
             Log.d(TAG, "覆盖层已显示, view=$container, params=$layoutParams")
             
         } catch (e: Exception) {
@@ -88,14 +92,23 @@ class BlockingOverlay(
         
         Log.d(TAG, "View查找结果: promptText=$promptText, inputText=$inputText, charCounter=$charCounter, submitButton=$submitButton, backButton=$backButton")
         
-        // 设置提示语
-        promptText.text = prefsManager.getRandomPrompt()
+        // 恢复或生成新的提示语
+        if (pendingPrompt == null) {
+            pendingPrompt = prefsManager.getRandomPrompt()
+        }
+        promptText.text = pendingPrompt
         Log.d(TAG, "设置提示语: ${promptText.text}")
+        
+        // 恢复输入文本
+        inputText.setText(pendingTypedText)
+        inputText.setSelection(pendingTypedText.length)
+        Log.d(TAG, "恢复输入文本: '$pendingTypedText'")
         
         // 设置字符计数器
         val minChars = prefsManager.minChars
-        charCounter.text = context.getString(R.string.block_char_count, 0, minChars)
-        submitButton.isEnabled = false
+        val currentLength = pendingTypedText.length
+        charCounter.text = context.getString(R.string.block_char_count, currentLength, minChars)
+        submitButton.isEnabled = currentLength >= minChars
         
         // 监听输入
         inputText.addTextChangedListener(object : TextWatcher {
@@ -104,6 +117,7 @@ class BlockingOverlay(
             
             override fun afterTextChanged(s: Editable?) {
                 val length = s?.length ?: 0
+                pendingTypedText = s?.toString() ?: ""
                 charCounter.text = context.getString(R.string.block_char_count, length, minChars)
                 submitButton.isEnabled = length >= minChars
             }
@@ -116,6 +130,7 @@ class BlockingOverlay(
             if (content.length >= minChars) {
                 Log.d(TAG, "用户提交反思,长度: ${content.length}")
                 historyManager.saveEntry(ReflectionEntry(content = content))
+                clearPendingState()
                 hide()
                 onDismiss(true)
             } else {
@@ -126,6 +141,7 @@ class BlockingOverlay(
         // 返回按钮
         backButton.setOnClickListener {
             Log.d(TAG, "返回按钮被点击")
+            clearPendingState()
             hide()
             onDismiss(false)
         }
@@ -169,14 +185,25 @@ class BlockingOverlay(
             overlayView?.let {
                 windowManager.removeView(it)
                 overlayView = null
-                Log.d(TAG, "覆盖层已隐藏")
+                Log.d(TAG, "覆盖层已隐藏 (pending状态保留)")
             }
         } catch (e: Exception) {
             Log.e(TAG, "隐藏覆盖层失败", e)
         }
     }
     
+    fun clearPendingState() {
+        pendingPrompt = null
+        pendingTypedText = ""
+        Log.d(TAG, "清除pending状态")
+    }
+    
+    fun hasPendingState(): Boolean {
+        return pendingPrompt != null || pendingTypedText.isNotEmpty()
+    }
+    
     fun destroy() {
         hide()
+        clearPendingState()
     }
 }

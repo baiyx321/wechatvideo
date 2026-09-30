@@ -71,7 +71,16 @@ class WeChatBlockerService : AccessibilityService() {
             }
             
             val appType = TARGET_APPS[packageName]
+            
+            // 检查是否离开了目标应用
             if (appType == null) {
+                // 不是目标应用
+                if (isCurrentlyBlocking) {
+                    Log.d(TAG, "离开目标应用,隐藏overlay但保留pending状态")
+                    overlay?.hide()
+                    // 不改变isCurrentlyBlocking状态,保持pending
+                }
+                
                 if (currentForegroundApp != null) {
                     usageTracker.setLastLeftTime(currentForegroundApp!!, System.currentTimeMillis())
                     currentForegroundApp = null
@@ -100,10 +109,26 @@ class WeChatBlockerService : AccessibilityService() {
                 else -> true
             }
             
-            if (!shouldBlockThisApp) {
+            // 检查是否离开了视频号页面(但仍在微信内)
+            if (appType == "wechat" && !shouldBlockThisApp) {
+                if (isCurrentlyBlocking) {
+                    Log.d(TAG, "离开视频号页面,隐藏overlay但保留pending状态")
+                    overlay?.hide()
+                }
                 return
             }
             
+            // 现在在目标应用/页面中
+            if (isCurrentlyBlocking) {
+                // 有pending状态,恢复overlay
+                if (overlay?.overlayView == null && overlay?.hasPendingState() == true) {
+                    Log.d(TAG, "返回目标应用,恢复overlay (不计为新的on-open)")
+                    overlay?.show()
+                }
+                return
+            }
+            
+            // 没有pending状态,检查是否需要触发新的拦截
             if (currentForegroundApp != packageName) {
                 if (currentForegroundApp != null) {
                     usageTracker.setLastLeftTime(currentForegroundApp!!, System.currentTimeMillis())
@@ -210,10 +235,14 @@ class WeChatBlockerService : AccessibilityService() {
                 if (success) {
                     usageTracker.setLastShownTime(packageName, System.currentTimeMillis())
                     Log.d(TAG, "用户通过验证")
+                    // 提交成功,执行返回并清除blocking状态
+                    isCurrentlyBlocking = false
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                } else {
+                    // 点击返回按钮,执行返回并清除blocking状态
+                    isCurrentlyBlocking = false
+                    performGlobalAction(GLOBAL_ACTION_BACK)
                 }
-                hideBlockingOverlay()
-                
-                performGlobalAction(GLOBAL_ACTION_BACK)
             }
         }
         
@@ -221,7 +250,7 @@ class WeChatBlockerService : AccessibilityService() {
     }
     
     private fun hideBlockingOverlay() {
-        isCurrentlyBlocking = false
+        // 只隐藏view,不改变isCurrentlyBlocking状态
         overlay?.hide()
     }
     
