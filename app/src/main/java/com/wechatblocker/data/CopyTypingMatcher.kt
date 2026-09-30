@@ -32,7 +32,7 @@ object CopyTypingMatcher {
         )
     }
     
-    private fun cleanText(text: String): String {
+    fun cleanText(text: String): String {
         var result = text
         result = result.replace(Regex("\\s+"), "")
         val punctuation = listOf("，", "。", "！", "？", "、", "；", "：", """, """, "'", "'", "（", "）", "《", "》", "【", "】")

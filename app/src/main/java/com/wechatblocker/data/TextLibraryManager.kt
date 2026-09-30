@@ -9,7 +9,7 @@ class TextLibraryManager(private val context: Context) {
     
     companion object {
         private const val TAG = "TextLibraryManager"
-        private const val TEXTS_DIR = "texts"
+        private const val TEXTS_DIR = "classics"
         
         val DEFAULT_BOOKS = listOf(
             "lunyu",
