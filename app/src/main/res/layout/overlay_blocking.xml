@@ -4,77 +4,84 @@
     android:layout_height="match_parent"
     android:background="#F0000000">
 
-    <LinearLayout
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:layout_margin="32dp"
-        android:background="@drawable/bg_overlay"
-        android:orientation="vertical"
-        android:padding="24dp">
-
-        <TextView
-            android:id="@+id/promptText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:text="@string/block_default_prompt"
-            android:textColor="#333333"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:lineSpacingExtra="8dp"
-            android:layout_marginBottom="24dp" />
-
-        <EditText
-            android:id="@+id/inputText"
-            android:layout_width="match_parent"
-            android:layout_height="200dp"
-            android:background="@drawable/bg_input"
-            android:gravity="top|start"
-            android:hint="@string/block_hint"
-            android:inputType="textMultiLine|textCapSentences"
-            android:padding="16dp"
-            android:textColor="#333333"
-            android:textColorHint="#999999"
-            android:textSize="16sp" />
-
-        <TextView
-            android:id="@+id/charCounter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="end"
-            android:layout_marginTop="8dp"
-            android:text="@string/block_char_count"
-            android:textColor="#666666"
-            android:textSize="14sp" />
+        android:layout_height="match_parent"
+        android:fillViewport="true">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:orientation="horizontal">
+            android:layout_gravity="center"
+            android:layout_margin="32dp"
+            android:background="@drawable/bg_overlay"
+            android:orientation="vertical"
+            android:padding="24dp">
 
-            <Button
-                android:id="@+id/backButton"
-                android:layout_width="0dp"
+            <TextView
+                android:id="@+id/promptText"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="8dp"
-                android:background="@drawable/bg_button_secondary"
-                android:text="@string/block_back"
+                android:gravity="center"
+                android:text="@string/block_default_prompt"
+                android:textColor="#333333"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:lineSpacingExtra="8dp"
+                android:layout_marginBottom="24dp" />
+
+            <EditText
+                android:id="@+id/inputText"
+                android:layout_width="match_parent"
+                android:layout_height="120dp"
+                android:background="@drawable/bg_input"
+                android:gravity="top|start"
+                android:hint="@string/block_hint"
+                android:inputType="textMultiLine|textCapSentences"
+                android:padding="16dp"
+                android:textColor="#333333"
+                android:textColorHint="#999999"
+                android:textSize="16sp"
+                android:scrollbars="vertical" />
+
+            <TextView
+                android:id="@+id/charCounter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginTop="8dp"
+                android:text="@string/block_char_count"
                 android:textColor="#666666"
-                android:textSize="16sp" />
+                android:textSize="14sp" />
 
-            <Button
-                android:id="@+id/submitButton"
-                android:layout_width="0dp"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/bg_button_primary"
-                android:text="@string/block_submit"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp" />
+                android:layout_marginTop="24dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/backButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/bg_button_secondary"
+                    android:text="@string/block_back"
+                    android:textColor="#666666"
+                    android:textSize="16sp" />
+
+                <Button
+                    android:id="@+id/submitButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_button_submit"
+                    android:text="@string/block_submit"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp" />
+            </LinearLayout>
         </LinearLayout>
-    </LinearLayout>
+    </ScrollView>
 </FrameLayout>

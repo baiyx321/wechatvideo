@@ -50,6 +50,8 @@ class BlockingOverlay(
                 gravity = Gravity.CENTER
                 // 确保window可以接收触摸
                 format = PixelFormat.TRANSLUCENT
+                // 键盘弹出时调整窗口大小
+                softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
             }
             
             val container = FrameLayout(context).apply {
@@ -132,25 +134,32 @@ class BlockingOverlay(
         submitButton.addOnLayoutChangeListener { v, left, top, right, bottom, _, _, _, _ ->
             val location = IntArray(2)
             v.getLocationOnScreen(location)
-            Log.d(TAG, "提交按钮位置: screen=(${location[0]},${location[1]}), bounds=($left,$top,$right,$bottom), size=${right-left}x${bottom-top}")
-            Log.d(TAG, "提交按钮状态: enabled=${v.isEnabled}, clickable=${v.isClickable}, focusable=${v.isFocusable}, visibility=${v.visibility}")
+            val centerX = location[0] + (right - left) / 2
+            val centerY = location[1] + (bottom - top) / 2
+            Log.d(TAG, "提交按钮位置: screen=(${location[0]},${location[1]}), " +
+                    "size=${right-left}x${bottom-top}, center=($centerX,$centerY)")
+            Log.d(TAG, "提交按钮状态: enabled=${v.isEnabled}, clickable=${v.isClickable}")
         }
         
         backButton.addOnLayoutChangeListener { v, left, top, right, bottom, _, _, _, _ ->
             val location = IntArray(2)
             v.getLocationOnScreen(location)
-            Log.d(TAG, "返回按钮位置: screen=(${location[0]},${location[1]}), bounds=($left,$top,$right,$bottom), size=${right-left}x${bottom-top}")
-            Log.d(TAG, "返回按钮状态: enabled=${v.isEnabled}, clickable=${v.isClickable}, focusable=${v.isFocusable}, visibility=${v.visibility}")
+            val centerX = location[0] + (right - left) / 2
+            val centerY = location[1] + (bottom - top) / 2
+            Log.d(TAG, "返回按钮位置: screen=(${location[0]},${location[1]}), " +
+                    "size=${right-left}x${bottom-top}, center=($centerX,$centerY)")
         }
         
-        // 给提交按钮添加touch listener来调试
+        // 给按钮添加touch listener来调试触摸事件
         submitButton.setOnTouchListener { v, event ->
-            Log.d(TAG, "提交按钮收到触摸: action=${event.action}, x=${event.x}, y=${event.y}")
-            false  // 让onClick处理
+            Log.d(TAG, "提交按钮收到触摸: action=${event.actionMasked}, x=${event.x}, y=${event.y}, " +
+                    "rawX=${event.rawX}, rawY=${event.rawY}")
+            false  // 不拦截,让onClick处理
         }
         
         backButton.setOnTouchListener { v, event ->
-            Log.d(TAG, "返回按钮收到触摸: action=${event.action}, x=${event.x}, y=${event.y}")
+            Log.d(TAG, "返回按钮收到触摸: action=${event.actionMasked}, x=${event.x}, y=${event.y}, " +
+                    "rawX=${event.rawX}, rawY=${event.rawY}")
             false
         }
     }
