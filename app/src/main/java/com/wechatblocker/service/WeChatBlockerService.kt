@@ -2,9 +2,12 @@ package com.wechatblocker.service
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.wechatblocker.data.AppUsageTracker
 import com.wechatblocker.data.PreferencesManager
 import com.wechatblocker.logic.BlockingLogic
 import com.wechatblocker.ui.BlockingOverlay
@@ -12,8 +15,12 @@ import com.wechatblocker.ui.BlockingOverlay
 class WeChatBlockerService : AccessibilityService() {
     
     private lateinit var prefsManager: PreferencesManager
+    private lateinit var usageTracker: AppUsageTracker
     private var overlay: BlockingOverlay? = null
     private var isCurrentlyBlocking = false
+    private var currentForegroundApp: String? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var nightCheckRunnable: Runnable? = null
     
     companion object {
         private const val TAG = "WeChatBlockerService"
@@ -26,12 +33,21 @@ class WeChatBlockerService : AccessibilityService() {
             private set
         var latestVisibleTexts: List<String> = emptyList()
             private set
+        
+        private val TARGET_APPS = mapOf(
+            "com.tencent.mm" to "wechat",
+            "com.wechatblocker.fakewechat" to "wechat",
+            "com.ss.android.ugc.aweme" to "douyin",
+            "com.ss.android.ugc.aweme.lite" to "douyin",
+            "com.xingin.xhs" to "xiaohongshu"
+        )
     }
     
     override fun onCreate() {
         super.onCreate()
         instance = this
         prefsManager = PreferencesManager(this)
+        usageTracker = AppUsageTracker(this)
         Log.d(TAG, "服务已创建")
     }
     
@@ -42,40 +58,68 @@ class WeChatBlockerService : AccessibilityService() {
             val packageName = event.packageName?.toString() ?: return
             val className = event.className?.toString()
             
-            // 更新调试信息
             latestPackageName = packageName
             latestClassName = className
             
-            // 收集可见文本
             val visibleTexts = collectVisibleTexts(event)
             latestVisibleTexts = visibleTexts
             
-            Log.d(TAG, "事件 - 包名: $packageName, 类名: $className, 文本数: ${visibleTexts.size}")
+            Log.d(TAG, "事件 - 包名: $packageName, 类名: $className")
             
-            // 创建拦截逻辑
-            val logic = BlockingLogic(
-                minChars = prefsManager.minChars,
-                cooldownMinutes = prefsManager.cooldownMinutes,
-                classKeywords = prefsManager.classKeywords.split(",").map { it.trim() },
-                textKeywords = prefsManager.textKeywords.split(",").map { it.trim() },
-                targetPackages = prefsManager.targetPackages.split(",").map { it.trim() },
-                enabled = prefsManager.enabled
-            )
+            if (!prefsManager.enabled) {
+                return
+            }
             
-            // 检查是否需要拦截
-            val shouldBlock = logic.shouldBlock(
-                packageName = packageName,
-                className = className,
-                visibleTexts = visibleTexts,
-                lastPassTime = prefsManager.lastPassTime
-            )
+            val appType = TARGET_APPS[packageName]
+            if (appType == null) {
+                if (currentForegroundApp != null) {
+                    usageTracker.setLastLeftTime(currentForegroundApp!!, System.currentTimeMillis())
+                    currentForegroundApp = null
+                    cancelNightCheck()
+                }
+                return
+            }
             
-            if (shouldBlock && !isCurrentlyBlocking) {
-                showBlockingOverlay()
-            } else if (!shouldBlock && isCurrentlyBlocking) {
-                // 不要因为新事件而隐藏覆盖层
-                // 覆盖层只应该在用户操作后隐藏
-                Log.d(TAG, "检测到不需拦截但覆盖层在显示中,保持显示")
+            if (!isAppEnabled(appType)) {
+                Log.d(TAG, "$appType is disabled in settings")
+                return
+            }
+            
+            val shouldBlockThisApp = when (appType) {
+                "wechat" -> {
+                    val logic = BlockingLogic(
+                        minChars = prefsManager.minChars,
+                        cooldownMinutes = 0,
+                        classKeywords = prefsManager.classKeywords.split(",").map { it.trim() },
+                        textKeywords = prefsManager.textKeywords.split(",").map { it.trim() },
+                        targetPackages = emptyList(),
+                        enabled = true
+                    )
+                    logic.isFinderPage(className, visibleTexts)
+                }
+                else -> true
+            }
+            
+            if (!shouldBlockThisApp) {
+                return
+            }
+            
+            if (currentForegroundApp != packageName) {
+                if (currentForegroundApp != null) {
+                    usageTracker.setLastLeftTime(currentForegroundApp!!, System.currentTimeMillis())
+                }
+                currentForegroundApp = packageName
+                
+                if (usageTracker.shouldShowOnOpen(packageName, prefsManager.awayMinutes)) {
+                    Log.d(TAG, "显示on-open覆盖层: $packageName")
+                    showBlockingOverlay(packageName)
+                    usageTracker.setLastShownTime(packageName, System.currentTimeMillis())
+                    usageTracker.markNightReminderShown(packageName)
+                } else {
+                    Log.d(TAG, "跳过on-open (最近使用): $packageName")
+                }
+                
+                scheduleNightCheck(packageName)
             }
             
         } catch (e: Exception) {
@@ -83,16 +127,49 @@ class WeChatBlockerService : AccessibilityService() {
         }
     }
     
+    private fun isAppEnabled(appType: String): Boolean {
+        return when (appType) {
+            "wechat" -> prefsManager.enableWechat
+            "douyin" -> prefsManager.enableDouyin
+            "xiaohongshu" -> prefsManager.enableXiaohongshu
+            else -> false
+        }
+    }
+    
+    private fun scheduleNightCheck(packageName: String) {
+        cancelNightCheck()
+        
+        nightCheckRunnable = object : Runnable {
+            override fun run() {
+                if (currentForegroundApp == packageName && !isCurrentlyBlocking) {
+                    if (usageTracker.shouldShowNightReminder(packageName, prefsManager.nightHour)) {
+                        Log.d(TAG, "显示night覆盖层: $packageName")
+                        showBlockingOverlay(packageName)
+                        usageTracker.markNightReminderShown(packageName)
+                    }
+                }
+                
+                handler.postDelayed(this, 60000)
+            }
+        }
+        handler.postDelayed(nightCheckRunnable!!, 60000)
+    }
+    
+    private fun cancelNightCheck() {
+        nightCheckRunnable?.let {
+            handler.removeCallbacks(it)
+            nightCheckRunnable = null
+        }
+    }
+    
     private fun collectVisibleTexts(event: AccessibilityEvent): List<String> {
         val texts = mutableListOf<String>()
         
         try {
-            // 从事件中收集文本
             event.text?.forEach { charSeq ->
                 charSeq?.toString()?.takeIf { it.isNotBlank() }?.let { texts.add(it) }
             }
             
-            // 从根节点收集文本
             rootInActiveWindow?.let { root ->
                 collectTextsFromNode(root, texts)
                 root.recycle()
@@ -120,19 +197,22 @@ class WeChatBlockerService : AccessibilityService() {
         }
     }
     
-    private fun showBlockingOverlay() {
-        Log.d(TAG, "显示拦截界面")
+    private fun showBlockingOverlay(packageName: String) {
+        if (isCurrentlyBlocking) {
+            Log.d(TAG, "覆盖层已在显示中")
+            return
+        }
+        
         isCurrentlyBlocking = true
         
         if (overlay == null) {
             overlay = BlockingOverlay(this, prefsManager) { success ->
                 if (success) {
-                    prefsManager.lastPassTime = System.currentTimeMillis()
-                    Log.d(TAG, "用户通过验证,设置冷却时间")
+                    usageTracker.setLastShownTime(packageName, System.currentTimeMillis())
+                    Log.d(TAG, "用户通过验证")
                 }
                 hideBlockingOverlay()
                 
-                // 如果用户提交或返回,执行返回操作
                 performGlobalAction(GLOBAL_ACTION_BACK)
             }
         }
@@ -141,7 +221,6 @@ class WeChatBlockerService : AccessibilityService() {
     }
     
     private fun hideBlockingOverlay() {
-        Log.d(TAG, "隐藏拦截界面")
         isCurrentlyBlocking = false
         overlay?.hide()
     }
@@ -156,6 +235,7 @@ class WeChatBlockerService : AccessibilityService() {
         overlay?.destroy()
         overlay = null
         instance = null
+        cancelNightCheck()
         Log.d(TAG, "服务销毁")
     }
     
