@@ -3,21 +3,16 @@ package com.wechatblocker.ui
 import android.content.Context
 import android.graphics.PixelFormat
 import android.text.Editable
-import android.text.Spannable
-import android.text.SpannableString
 import android.text.TextWatcher
-import android.text.style.ForegroundColorSpan
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
-import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import com.wechatblocker.R
 import com.wechatblocker.data.CopyTypingMatcher
 import com.wechatblocker.data.HistoryManager
@@ -98,6 +93,7 @@ class BlockingOverlay(
         val promptText = view.findViewById<TextView>(R.id.promptText)
         val changePassageButton = view.findViewById<Button>(R.id.changePassageButton)
         val inputText = view.findViewById<EditText>(R.id.inputText)
+        val matchPreview = view.findViewById<TextView>(R.id.matchPreview)
         val mismatchHint = view.findViewById<TextView>(R.id.mismatchHint)
         val charCounter = view.findViewById<TextView>(R.id.charCounter)
         val submitButton = view.findViewById<Button>(R.id.submitButton)
@@ -111,7 +107,12 @@ class BlockingOverlay(
         // 加载可用段落
         if (availablePassages.isEmpty() && isCopyTypingMode) {
             val enabledBooks = prefsManager.enabledBooks
-            availablePassages = textLibraryManager.extractPassages(enabledBooks, minChars)
+            availablePassages = textLibraryManager.extractPassages(
+                enabledBooks = enabledBooks,
+                minLength = minChars,
+                maxLength = 80,
+                customText = prefsManager.customTexts
+            )
             Log.d(TAG, "加载了 ${availablePassages.size} 个段落")
         }
         
@@ -135,7 +136,7 @@ class BlockingOverlay(
             Log.d(TAG, "恢复输入文本: '$pendingTypedText'")
             
             // 初始匹配
-            updateMatching(pendingPassage!!.text, pendingTypedText, charCounter, mismatchHint, submitButton, minChars)
+            updateMatching(pendingPassage!!.text, pendingTypedText, charCounter, mismatchHint, matchPreview, submitButton, minChars)
             
             // 监听输入
             inputText.addTextChangedListener(object : TextWatcher {
@@ -145,7 +146,7 @@ class BlockingOverlay(
                 override fun afterTextChanged(s: Editable?) {
                     val input = s?.toString() ?: ""
                     pendingTypedText = input
-                    updateMatching(pendingPassage!!.text, input, charCounter, mismatchHint, submitButton, minChars)
+                    updateMatching(pendingPassage!!.text, input, charCounter, mismatchHint, matchPreview, submitButton, minChars)
                 }
             })
             
@@ -159,7 +160,7 @@ class BlockingOverlay(
                 promptText.text = pendingPassage!!.text
                 inputText.setText("")
                 mismatchHint.visibility = View.GONE
-                updateMatching(pendingPassage!!.text, "", charCounter, mismatchHint, submitButton, minChars)
+                updateMatching(pendingPassage!!.text, "", charCounter, mismatchHint, matchPreview, submitButton, minChars)
             }
             
         } else {
@@ -167,6 +168,7 @@ class BlockingOverlay(
             sourceText.visibility = View.GONE
             changePassageButton.visibility = View.GONE
             mismatchHint.visibility = View.GONE
+            matchPreview.visibility = View.GONE
             
             // 使用旧的自由模式逻辑
             if (pendingPassage == null) {
@@ -215,11 +217,13 @@ class BlockingOverlay(
                 } else {
                     ""
                 }
-                historyManager.saveEntry(ReflectionEntry(
-                    content = content, 
-                    prompt = pendingPassage?.text ?: "",
-                    source = source
-                ))
+                historyManager.saveEntry(
+                    ReflectionEntry(
+                        content = content,
+                        passageSource = source,
+                        passageText = pendingPassage?.text ?: ""
+                    )
+                )
                 clearPendingState()
                 hide()
                 onDismiss(true)
@@ -275,6 +279,7 @@ class BlockingOverlay(
         input: String,
         charCounter: TextView,
         mismatchHint: TextView,
+        matchPreview: TextView,
         submitButton: Button,
         minChars: Int
     ) {
@@ -282,6 +287,19 @@ class BlockingOverlay(
         
         charCounter.text = "正确 ${matchResult.correctCount} / $minChars"
         submitButton.isEnabled = matchResult.correctCount >= minChars
+        Log.d(TAG, "抄写匹配: correct=${matchResult.correctCount} min=$minChars mismatches=${matchResult.mismatches.size}")
+
+        if (input.isNotBlank()) {
+            matchPreview.visibility = View.VISIBLE
+            matchPreview.text = CopyTypingMatcher.highlightAgainstPassage(
+                passage,
+                input,
+                0xFFF44336.toInt()
+            )
+        } else {
+            matchPreview.visibility = View.GONE
+            matchPreview.text = ""
+        }
         
         if (matchResult.firstMismatchIndex >= 0) {
             val cleanPassage = CopyTypingMatcher.cleanText(passage)

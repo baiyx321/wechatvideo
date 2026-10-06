@@ -13,131 +13,211 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/setting_enabled"
-            android:textSize="16sp"
+            android:layout_marginBottom="12dp"
+            android:text="应用开关"
             android:textColor="#333333"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
+            android:textSize="18sp"
+            android:textStyle="bold" />
 
         <Switch
-            android:id="@+id/enabledSwitch"
+            android:id="@+id/enableWechatSwitch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/setting_enabled_summary"
-            android:layout_marginBottom="24dp" />
+            android:layout_marginBottom="8dp"
+            android:text="拦截微信视频号" />
+
+        <Switch
+            android:id="@+id/enableDouyinSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="拦截抖音 / 极速版" />
+
+        <Switch
+            android:id="@+id/enableXiaohongshuSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:text="拦截小红书" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/setting_min_chars"
-            android:textSize="16sp"
+            android:layout_marginBottom="12dp"
+            android:text="触发条件"
             android:textColor="#333333"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="离开多少分钟后再打开才触发"
+            android:textColor="#666666"
+            android:textSize="14sp" />
+
+        <EditText
+            android:id="@+id/awayMinutesEdit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:hint="5"
+            android:inputType="number" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="夜间提醒时间（时）"
+            android:textColor="#666666"
+            android:textSize="14sp" />
+
+        <EditText
+            android:id="@+id/nightHourEdit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:hint="23"
+            android:inputType="number" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="夜间提醒时间（分）"
+            android:textColor="#666666"
+            android:textSize="14sp" />
+
+        <EditText
+            android:id="@+id/nightMinuteEdit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:hint="0"
+            android:inputType="number" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:text="抄写设置"
+            android:textColor="#333333"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <Switch
+            android:id="@+id/copyTypingModeSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:text="抄写模式（关闭则为自由书写）" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="最少正确字符数"
+            android:textColor="#666666"
+            android:textSize="14sp" />
 
         <EditText
             android:id="@+id/minCharsEdit"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="number"
+            android:layout_marginBottom="24dp"
             android:hint="50"
-            android:layout_marginBottom="24dp" />
+            android:inputType="number" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/setting_cooldown"
-            android:textSize="16sp"
+            android:layout_marginBottom="12dp"
+            android:text="启用的书籍"
             android:textColor="#333333"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
+            android:textSize="18sp"
+            android:textStyle="bold" />
 
-        <EditText
-            android:id="@+id/cooldownEdit"
+        <CheckBox
+            android:id="@+id/bookLunyu"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="number"
-            android:hint="10"
-            android:layout_marginBottom="24dp" />
+            android:text="论语" />
+
+        <CheckBox
+            android:id="@+id/bookDaxue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="大学" />
+
+        <CheckBox
+            android:id="@+id/bookZhongyong"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="中庸" />
+
+        <CheckBox
+            android:id="@+id/bookMengzi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="孟子" />
+
+        <CheckBox
+            android:id="@+id/bookXunzi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="荀子" />
+
+        <CheckBox
+            android:id="@+id/bookGuanzi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:text="管子" />
+
+        <Button
+            android:id="@+id/importTextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="导入自定义 txt" />
+
+        <TextView
+            android:id="@+id/customTextStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:text="未导入自定义文本"
+            android:textColor="#666666"
+            android:textSize="13sp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/setting_prompts"
-            android:textSize="16sp"
+            android:layout_marginBottom="12dp"
+            android:text="调试"
             android:textColor="#333333"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
+            android:textSize="18sp"
+            android:textStyle="bold" />
 
-        <TextView
+        <Button
+            android:id="@+id/shortenAwayButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="可以输入多个提示语,用 --- 分隔,每次随机选择一个"
-            android:textSize="12sp"
-            android:textColor="#999999"
-            android:layout_marginBottom="8dp" />
+            android:layout_marginBottom="8dp"
+            android:text="缩短离开时间到 0 分钟" />
 
-        <EditText
-            android:id="@+id/promptsEdit"
-            android:layout_width="match_parent"
-            android:layout_height="150dp"
-            android:gravity="top|start"
-            android:inputType="textMultiLine"
-            android:layout_marginBottom="24dp" />
-
-        <TextView
+        <Button
+            android:id="@+id/triggerNightButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/setting_class_keywords"
-            android:textSize="16sp"
-            android:textColor="#333333"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
-
-        <EditText
-            android:id="@+id/classKeywordsEdit"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="finder,FinderHomeUI"
-            android:layout_marginBottom="24dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/setting_text_keywords"
-            android:textSize="16sp"
-            android:textColor="#333333"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
-
-        <EditText
-            android:id="@+id/textKeywordsEdit"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="视频号,关注,朋友"
-            android:layout_marginBottom="24dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/setting_target_packages"
-            android:textSize="16sp"
-            android:textColor="#333333"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
-
-        <EditText
-            android:id="@+id/targetPackagesEdit"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="com.tencent.mm"
-            android:layout_marginBottom="24dp" />
+            android:layout_marginBottom="24dp"
+            android:text="立即触发夜间检查" />
 
         <Button
             android:id="@+id/saveButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="保存设置"
-            android:textSize="16sp" />
+            android:text="保存设置" />
     </LinearLayout>
 </ScrollView>

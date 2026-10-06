@@ -32,8 +32,22 @@
             android:id="@+id/refreshButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/debug_refresh"
-            android:layout_marginBottom="24dp" />
+            android:layout_marginBottom="8dp"
+            android:text="@string/debug_refresh" />
+
+        <Button
+            android:id="@+id/shortenAwayButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="缩短离开时间到 0 分钟" />
+
+        <Button
+            android:id="@+id/triggerNightButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:text="立即触发夜间检查" />
 
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"

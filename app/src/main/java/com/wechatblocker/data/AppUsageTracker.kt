@@ -37,31 +37,35 @@ class AppUsageTracker(context: Context) {
         prefs.edit().putString(PREFIX_NIGHT_SHOWN_DATE + packageName, date).apply()
     }
     
-    fun shouldShowOnOpen(packageName: String, awayMinutes: Int): Boolean {
-        val now = System.currentTimeMillis()
-        val lastLeft = getLastLeftTime(packageName)
-        
-        if (lastLeft == 0L) {
-            return true
-        }
-        
-        val awayTimeMs = awayMinutes * 60 * 1000L
-        return (now - lastLeft) > awayTimeMs
+    fun shouldShowOnOpen(packageName: String, awayMinutes: Int, nowMs: Long = System.currentTimeMillis()): Boolean {
+        return UsageTriggerLogic.shouldShowOnOpen(getLastLeftTime(packageName), nowMs, awayMinutes)
     }
     
-    fun shouldShowNightReminder(packageName: String, nightHour: Int): Boolean {
-        val calendar = java.util.Calendar.getInstance()
-        val currentHour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
-        
-        if (currentHour < nightHour) {
-            return false
-        }
-        
+    fun shouldShowNightReminder(
+        packageName: String,
+        nightHour: Int,
+        nightMinute: Int = 0,
+        calendar: java.util.Calendar = java.util.Calendar.getInstance()
+    ): Boolean {
         val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-        val today = dateFormat.format(java.util.Date())
-        val lastShownDate = getNightShownDate(packageName)
-        
-        return lastShownDate != today
+        val today = dateFormat.format(calendar.time)
+        return UsageTriggerLogic.shouldShowNightReminder(
+            calendar = calendar,
+            nightHour = nightHour,
+            nightMinute = nightMinute,
+            lastShownDate = getNightShownDate(packageName),
+            today = today
+        )
+    }
+    
+    fun clearNightShownDate(packageName: String) {
+        prefs.edit().remove(PREFIX_NIGHT_SHOWN_DATE + packageName).apply()
+    }
+    
+    fun clearAllNightShownDates() {
+        val editor = prefs.edit()
+        prefs.all.keys.filter { it.startsWith(PREFIX_NIGHT_SHOWN_DATE) }.forEach { editor.remove(it) }
+        editor.apply()
     }
     
     fun markNightReminderShown(packageName: String) {

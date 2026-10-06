@@ -10,7 +10,9 @@ import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import android.util.Log
 import com.wechatblocker.R
+import com.wechatblocker.data.PreferencesManager
 import com.wechatblocker.service.WeChatBlockerService
 
 class DebugActivity : AppCompatActivity() {
@@ -33,12 +35,32 @@ class DebugActivity : AppCompatActivity() {
         textsText = findViewById(R.id.textsText)
         
         val refreshButton = findViewById<Button>(R.id.refreshButton)
+        val shortenAwayButton = findViewById<Button>(R.id.shortenAwayButton)
+        val triggerNightButton = findViewById<Button>(R.id.triggerNightButton)
         val copyPackageButton = findViewById<Button>(R.id.copyPackageButton)
         val copyClassButton = findViewById<Button>(R.id.copyClassButton)
         val copyTextsButton = findViewById<Button>(R.id.copyTextsButton)
         
         refreshButton.setOnClickListener {
             refreshDebugInfo()
+        }
+
+        shortenAwayButton.setOnClickListener {
+            PreferencesManager(this).awayMinutes = 0
+            WeChatBlockerService.instance?.shortenAwayForDebug()
+            Log.d("DebugActivity", "缩短离开时间为 0")
+            Toast.makeText(this, "离开时间已设为 0 分钟", Toast.LENGTH_SHORT).show()
+        }
+
+        triggerNightButton.setOnClickListener {
+            val shown = WeChatBlockerService.instance?.triggerNightCheckNow() ?: false
+            Log.d("DebugActivity", "夜间检查 shown=$shown")
+            val msg = when {
+                WeChatBlockerService.instance == null -> "服务未启用"
+                shown -> "已立即显示夜间覆盖层"
+                else -> "已标记夜间检查，打开目标应用后触发"
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
         }
         
         copyPackageButton.setOnClickListener {

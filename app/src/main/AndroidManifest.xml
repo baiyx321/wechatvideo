@@ -25,7 +25,7 @@
         
         <activity
             android:name=".ui.SettingsActivity"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/settings" />
         
         <activity
@@ -35,7 +35,7 @@
         
         <activity
             android:name=".ui.DebugActivity"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/debug_calibration" />
         
         <service

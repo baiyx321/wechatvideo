@@ -110,11 +110,25 @@ class HistoryAdapter(
     override fun getItemCount() = entries.size
     
     inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        private val sourceText: TextView = view.findViewById(R.id.sourceText)
+        private val passageText: TextView = view.findViewById(R.id.passageText)
         private val contentText: TextView = view.findViewById(R.id.contentText)
         private val timeText: TextView = view.findViewById(R.id.timeText)
         private val deleteButton: Button = view.findViewById(R.id.deleteButton)
         
         fun bind(entry: ReflectionEntry) {
+            if (entry.passageSource.isNotBlank()) {
+                sourceText.visibility = View.VISIBLE
+                sourceText.text = "《${entry.passageSource}》"
+            } else {
+                sourceText.visibility = View.GONE
+            }
+            if (entry.passageText.isNotBlank()) {
+                passageText.visibility = View.VISIBLE
+                passageText.text = entry.passageText
+            } else {
+                passageText.visibility = View.GONE
+            }
             contentText.text = entry.content
             timeText.text = dateFormat.format(Date(entry.timestamp))
             deleteButton.setOnClickListener {

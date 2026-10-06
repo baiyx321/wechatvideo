@@ -21,6 +21,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_CUSTOM_TEXTS = "custom_texts"
         private const val KEY_AWAY_MINUTES = "away_minutes"
         private const val KEY_NIGHT_HOUR = "night_hour"
+        private const val KEY_NIGHT_MINUTE = "night_minute"
         private const val KEY_ENABLE_WECHAT = "enable_wechat"
         private const val KEY_ENABLE_DOUYIN = "enable_douyin"
         private const val KEY_ENABLE_XIAOHONGSHU = "enable_xiaohongshu"
@@ -33,6 +34,7 @@ class PreferencesManager(context: Context) {
         const val DEFAULT_TARGET_PACKAGES = "com.tencent.mm,com.wechatblocker.fakewechat"
         const val DEFAULT_AWAY_MINUTES = 5
         const val DEFAULT_NIGHT_HOUR = 23
+        const val DEFAULT_NIGHT_MINUTE = 0
     }
     
     var minChars: Int
@@ -89,6 +91,14 @@ class PreferencesManager(context: Context) {
     var nightHour: Int
         get() = prefs.getInt(KEY_NIGHT_HOUR, DEFAULT_NIGHT_HOUR)
         set(value) = prefs.edit().putInt(KEY_NIGHT_HOUR, value).apply()
+    
+    var nightMinute: Int
+        get() = prefs.getInt(KEY_NIGHT_MINUTE, DEFAULT_NIGHT_MINUTE)
+        set(value) = prefs.edit().putInt(KEY_NIGHT_MINUTE, value).apply()
+    
+    fun nightTimeLabel(): String {
+        return String.format(java.util.Locale.getDefault(), "%02d:%02d", nightHour, nightMinute)
+    }
     
     var enableWechat: Boolean
         get() = prefs.getBoolean(KEY_ENABLE_WECHAT, true)

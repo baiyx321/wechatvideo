@@ -21,6 +21,7 @@ class WeChatBlockerService : AccessibilityService() {
     private var currentForegroundApp: String? = null
     private val handler = Handler(Looper.getMainLooper())
     private var nightCheckRunnable: Runnable? = null
+    private var forceNightPending = false
     
     companion object {
         private const val TAG = "WeChatBlockerService"
@@ -39,7 +40,9 @@ class WeChatBlockerService : AccessibilityService() {
             "com.wechatblocker.fakewechat" to "wechat",
             "com.ss.android.ugc.aweme" to "douyin",
             "com.ss.android.ugc.aweme.lite" to "douyin",
-            "com.xingin.xhs" to "xiaohongshu"
+            "com.ss.android.ugc.aweme.test" to "douyin",
+            "com.xingin.xhs" to "xiaohongshu",
+            "com.xingin.xhs.test" to "xiaohongshu"
         )
     }
     
@@ -135,7 +138,17 @@ class WeChatBlockerService : AccessibilityService() {
                 }
                 currentForegroundApp = packageName
                 
-                if (usageTracker.shouldShowOnOpen(packageName, prefsManager.awayMinutes)) {
+                if (forceNightPending || usageTracker.shouldShowNightReminder(
+                        packageName,
+                        prefsManager.nightHour,
+                        prefsManager.nightMinute
+                    )
+                ) {
+                    Log.d(TAG, "显示night覆盖层: $packageName force=$forceNightPending")
+                    showBlockingOverlay(packageName)
+                    usageTracker.markNightReminderShown(packageName)
+                    forceNightPending = false
+                } else if (usageTracker.shouldShowOnOpen(packageName, prefsManager.awayMinutes)) {
                     Log.d(TAG, "显示on-open覆盖层: $packageName")
                     showBlockingOverlay(packageName)
                     usageTracker.setLastShownTime(packageName, System.currentTimeMillis())
@@ -167,7 +180,12 @@ class WeChatBlockerService : AccessibilityService() {
         nightCheckRunnable = object : Runnable {
             override fun run() {
                 if (currentForegroundApp == packageName && !isCurrentlyBlocking) {
-                    if (usageTracker.shouldShowNightReminder(packageName, prefsManager.nightHour)) {
+                    if (forceNightPending || usageTracker.shouldShowNightReminder(
+                            packageName,
+                            prefsManager.nightHour,
+                            prefsManager.nightMinute
+                        )
+                    ) {
                         Log.d(TAG, "显示night覆盖层: $packageName")
                         showBlockingOverlay(packageName)
                         usageTracker.markNightReminderShown(packageName)
@@ -249,6 +267,25 @@ class WeChatBlockerService : AccessibilityService() {
         overlay?.show()
     }
     
+    fun shortenAwayForDebug() {
+        prefsManager.awayMinutes = 0
+        Log.d(TAG, "debug: awayMinutes shortened to 0")
+    }
+
+    fun triggerNightCheckNow(): Boolean {
+        usageTracker.clearAllNightShownDates()
+        forceNightPending = true
+        Log.d(TAG, "debug: night trigger armed, foreground=$currentForegroundApp blocking=$isCurrentlyBlocking")
+        val pkg = currentForegroundApp
+        if (pkg != null && !isCurrentlyBlocking) {
+            showBlockingOverlay(pkg)
+            usageTracker.markNightReminderShown(pkg)
+            forceNightPending = false
+            return true
+        }
+        return false
+    }
+
     private fun hideBlockingOverlay() {
         // 只隐藏view,不改变isCurrentlyBlocking状态
         overlay?.hide()

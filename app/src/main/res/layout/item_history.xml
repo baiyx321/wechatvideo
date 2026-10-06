@@ -14,13 +14,31 @@
         android:padding="16dp">
 
         <TextView
+            android:id="@+id/sourceText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:textColor="#888888"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/passageText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:textColor="#555555"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <TextView
             android:id="@+id/contentText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="15sp"
-            android:textColor="#333333"
+            android:layout_marginBottom="12dp"
             android:lineSpacingExtra="4dp"
-            android:layout_marginBottom="12dp" />
+            android:textColor="#333333"
+            android:textSize="15sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
