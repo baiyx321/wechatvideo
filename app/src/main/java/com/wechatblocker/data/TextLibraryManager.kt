@@ -51,20 +51,30 @@ class TextLibraryManager(private val context: Context) {
         enabledBooks: Set<String>,
         minLength: Int = 50,
         maxLength: Int = 80,
-        customText: String = ""
+        customText: String = "",
+        maxPassages: Int = 80
     ): List<Passage> {
         val passages = mutableListOf<Passage>()
 
         for (bookId in enabledBooks) {
+            if (passages.size >= maxPassages) break
             val bookName = BOOK_NAMES[bookId] ?: bookId
             val content = loadBook(bookId)
             if (content.isEmpty()) continue
-            passages.addAll(PassageExtractor.extractPassages(content, bookName, minLength, maxLength))
+            passages.addAll(
+                PassageExtractor.extractPassages(content, bookName, minLength, maxLength, maxPassages - passages.size)
+            )
         }
 
-        if (customText.isNotBlank()) {
+        if (customText.isNotBlank() && passages.size < maxPassages) {
             passages.addAll(
-                PassageExtractor.extractPassages(customText, BOOK_NAMES[CUSTOM_BOOK_ID] ?: "自定义", minLength, maxLength)
+                PassageExtractor.extractPassages(
+                    customText,
+                    BOOK_NAMES[CUSTOM_BOOK_ID] ?: "自定义",
+                    minLength,
+                    maxLength,
+                    maxPassages - passages.size
+                )
             )
         }
 

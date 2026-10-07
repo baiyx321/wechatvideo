@@ -111,7 +111,8 @@ class BlockingOverlay(
                 enabledBooks = enabledBooks,
                 minLength = minChars,
                 maxLength = 80,
-                customText = prefsManager.customTexts
+                customText = prefsManager.customTexts,
+                maxPassages = 80
             )
             Log.d(TAG, "加载了 ${availablePassages.size} 个段落")
         }

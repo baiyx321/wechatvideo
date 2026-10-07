@@ -7,7 +7,8 @@ object PassageExtractor {
         content: String,
         bookName: String,
         minLength: Int = 50,
-        maxLength: Int = 80
+        maxLength: Int = 80,
+        maxPassages: Int = Int.MAX_VALUE
     ): List<Passage> {
         if (content.isBlank()) return emptyList()
 
@@ -34,6 +35,7 @@ object PassageExtractor {
 
         val lines = content.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
         for (line in lines) {
+            if (passages.size >= maxPassages) break
             if (isChapterTitle(line)) {
                 flushIfReady(force = true)
                 currentChapter = normalizeChapter(line)
@@ -42,6 +44,7 @@ object PassageExtractor {
 
             val sentences = splitSentences(line)
             for (sentence in sentences) {
+                if (passages.size >= maxPassages) break
                 val nextCount = countHanzi(sentenceBuffer.joinToString("") + sentence)
                 if (sentenceBuffer.isNotEmpty() &&
                     countHanzi(sentenceBuffer.joinToString("")) >= minLength &&
