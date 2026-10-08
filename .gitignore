@@ -86,3 +86,6 @@ lint/tmp/
 
 # Android Profiling
 *.hprof
+
+# Local emulator UI test dumps
+emulator-ui-artifacts/
