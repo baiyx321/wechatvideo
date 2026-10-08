@@ -72,13 +72,15 @@ adb shell dumpsys accessibility | head -20 || true
 adb shell mkdir -p /sdcard/Download/blocker-ui
 adb logcat -c || true
 
+echo "=== instrumentation ==="
+adb shell pm list instrumentation
 echo "=== run OverlayUiTest ==="
 set +e
 adb shell am instrument -w -r \
   -e debug false \
   -e timeout_msec 180000 \
   -e class com.wechatblocker.OverlayUiTest \
-  com.wechatblocker.test/androidx.test.runner.AndroidJUnitRunner \
+  com.wechatblocker.test/com.wechatblocker.OverlayTestRunner \
   | tee "$ART/instrument.txt"
 INSTR_STATUS=${PIPESTATUS[0]}
 set -e
