@@ -49,21 +49,25 @@ adb install -r -g "$ROOT/fakexiaohongshu/build/outputs/apk/debug/fakexiaohongshu
 
 echo "=== optional ADBKeyBoard for Chinese input ==="
 ADBKB_APK="/tmp/ADBKeyboard.apk"
-if curl -fsSL -o "$ADBKB_APK" "https://github.com/senzhk/ADBKeyBoard/raw/master/ADBKeyboard.apk"; then
+if curl -fsSL -L -o "$ADBKB_APK" "https://github.com/senzhk/ADBKeyBoard/raw/master/ADBKeyboard.apk"; then
+  file "$ADBKB_APK" || true
   adb install -r -g "$ADBKB_APK" || echo "ADBKeyBoard install failed, continuing"
+  echo "available IMEs:"
+  adb shell ime list -a || true
   adb shell ime enable com.android.adbkeyboard/.AdbIME || true
   adb shell ime set com.android.adbkeyboard/.AdbIME || true
 else
   echo "ADBKeyBoard download failed, tests will use ACTION_SET_TEXT"
 fi
 
-echo "=== enable accessibility ==="
+echo "=== enable accessibility (will be re-asserted in tests after UiAutomation starts) ==="
 adb shell settings put secure enabled_accessibility_services \
   com.wechatblocker/com.wechatblocker.service.WeChatBlockerService
 adb shell settings put secure accessibility_enabled 1
 sleep 2
 echo "enabled_accessibility_services=$(adb shell settings get secure enabled_accessibility_services)"
 echo "accessibility_enabled=$(adb shell settings get secure accessibility_enabled)"
+adb shell dumpsys accessibility | head -20 || true
 
 adb shell mkdir -p /sdcard/Download/blocker-ui
 adb logcat -c || true

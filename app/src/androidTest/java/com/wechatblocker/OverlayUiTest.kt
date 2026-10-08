@@ -1,5 +1,6 @@
 package com.wechatblocker
 
+import android.app.UiAutomation
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -16,6 +17,7 @@ import org.junit.FixMethodOrder
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
+import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
@@ -196,9 +198,19 @@ class OverlayUiTest {
         shell("am start -W -n $PKG/.ui.SettingsActivity")
         device.wait(Until.hasObject(By.pkg(PKG)), 8000)
         sleep(500)
+        repeat(4) {
+            device.swipe(
+                device.displayWidth / 2,
+                (device.displayHeight * 0.8).toInt(),
+                device.displayWidth / 2,
+                (device.displayHeight * 0.25).toInt(),
+                30
+            )
+            sleep(400)
+        }
         val nightBtn = device.wait(
             Until.findObject(By.res("$PKG:id/triggerNightButton")),
-            5000
+            8000
         ) ?: device.findObject(By.textContains("夜间检查"))
         assertNotNull("找不到夜间触发按钮", nightBtn)
         nightBtn!!.click()
@@ -247,12 +259,15 @@ class OverlayUiTest {
         @JvmStatic
         @BeforeClass
         fun classSetup() {
-            device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            instrumentation.getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+            device = UiDevice.getInstance(instrumentation)
             shell("mkdir -p /sdcard/Download/blocker-ui")
             shell("input keyevent KEYCODE_WAKEUP")
             shell("wm dismiss-keyguard")
             shell("input keyevent 82")
             enableAccessibility()
+            assertTrue("无障碍服务应处于 Bound 状态", waitServiceBound(20000))
         }
 
         fun log(msg: String) {
@@ -279,19 +294,48 @@ class OverlayUiTest {
             val start = System.currentTimeMillis()
             while (System.currentTimeMillis() - start < 15000) {
                 if (isServiceEnabled()) {
-                    log("accessibility enabled")
-                    sleep(1500)
+                    log("accessibility enabled in settings")
+                    waitServiceBound(10000)
                     return
                 }
                 sleep(400)
             }
             log("WARN accessibility not confirmed: ${shell("settings get secure enabled_accessibility_services")}")
+            log(shell("dumpsys accessibility"))
         }
 
         fun isServiceEnabled(): Boolean {
             val enabled = shell("settings get secure enabled_accessibility_services")
             val flag = shell("settings get secure accessibility_enabled")
             return enabled.contains("WeChatBlockerService") && flag.trim().startsWith("1")
+        }
+
+        fun dumpLine(dump: String, prefix: String): String {
+            val idx = dump.indexOf(prefix)
+            if (idx < 0) return ""
+            return dump.substring(idx).lineSequence().first()
+        }
+
+        fun waitServiceBound(timeoutMs: Long): Boolean {
+            val start = System.currentTimeMillis()
+            while (System.currentTimeMillis() - start < timeoutMs) {
+                val dump = device.executeShellCommand("dumpsys accessibility") ?: ""
+                val crashedLine = dumpLine(dump, "Crashed services:")
+                val boundLine = dumpLine(dump, "Bound services:")
+                val crashed = crashedLine.contains("WeChatBlocker")
+                val bound = boundLine.contains("WeChatBlocker")
+                log("a11y boundLine='$boundLine' crashedLine='$crashedLine' bound=$bound crashed=$crashed")
+                if (bound && !crashed) return true
+                if (crashed || !bound) {
+                    log("service not bound, re-enable")
+                    shell("settings put secure enabled_accessibility_services null")
+                    sleep(400)
+                    shell("settings put secure enabled_accessibility_services $SERVICE")
+                    shell("settings put secure accessibility_enabled 1")
+                }
+                sleep(600)
+            }
+            return false
         }
 
         fun pressHomeQuiet() {
@@ -321,7 +365,12 @@ class OverlayUiTest {
             val ok = device.wait(Until.hasObject(By.res("$PKG:id/promptText")), timeoutMs) == true
             log("waitForOverlay timeout=$timeoutMs result=$ok pkg=${device.currentPackageName}")
             if (!ok) {
-                shell("uiautomator dump /sdcard/Download/blocker-ui/dump_no_overlay.xml")
+                try {
+                    device.dumpWindowHierarchy(File("/sdcard/Download/blocker-ui/dump_no_overlay.xml"))
+                } catch (e: Exception) {
+                    log("dumpWindowHierarchy failed: ${e.message}")
+                }
+                log(shell("dumpsys accessibility"))
             }
             return ok
         }
