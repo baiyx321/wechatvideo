@@ -2,6 +2,8 @@ package com.wechatblocker.ui
 
 import android.content.Context
 import android.graphics.PixelFormat
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
@@ -41,6 +43,23 @@ class BlockingOverlay(
     
     companion object {
         private const val TAG = "BlockingOverlay"
+        private const val MAX_SHOW_RETRIES = 3
+    }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var showRetries = 0
+
+    fun setPreloadedPassages(passages: List<Passage>) {
+        if (passages.isEmpty()) {
+            Log.d(TAG, "忽略空的预加载段落")
+            return
+        }
+        if (availablePassages.isEmpty()) {
+            availablePassages = passages
+            Log.d(TAG, "使用预加载段落 ${passages.size} 个")
+        } else {
+            Log.d(TAG, "已有 ${availablePassages.size} 个段落, 跳过预加载覆盖")
+        }
     }
     
     fun show() {
@@ -48,7 +67,7 @@ class BlockingOverlay(
             Log.d(TAG, "覆盖层已存在")
             return
         }
-        
+
         try {
             val layoutParams = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -80,10 +99,23 @@ class BlockingOverlay(
             
             windowManager.addView(container, layoutParams)
             overlayView = container
-            Log.d(TAG, "覆盖层已显示, view=$container, params=$layoutParams")
+            showRetries = 0
+            Log.d(TAG, "覆盖层已显示, view=$container, pending='${pendingTypedText.take(20)}'")
             
+        } catch (e: WindowManager.BadTokenException) {
+            Log.e(TAG, "addView BadTokenException, retries=$showRetries", e)
+            overlayView = null
+            overlayContent = null
+            if (showRetries < MAX_SHOW_RETRIES) {
+                showRetries++
+                mainHandler.postDelayed({
+                    Log.d(TAG, "BadToken 后重试显示 overlay retry=$showRetries")
+                    show()
+                }, 250L * showRetries)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "显示覆盖层失败", e)
+            overlayView = null
         }
     }
     
@@ -104,9 +136,11 @@ class BlockingOverlay(
         val isCopyTypingMode = prefsManager.copyTypingMode
         val minChars = prefsManager.minChars
         
-        // 加载可用段落
+        // 加载可用段落。优先用服务预加载的缓存,避免在无障碍线程读完整本书。
         if (availablePassages.isEmpty() && isCopyTypingMode) {
+            Log.w(TAG, "段落缓存为空,回退到同步抽取")
             val enabledBooks = prefsManager.enabledBooks
+            val start = System.currentTimeMillis()
             availablePassages = textLibraryManager.extractPassages(
                 enabledBooks = enabledBooks,
                 minLength = minChars,
@@ -114,7 +148,9 @@ class BlockingOverlay(
                 customText = prefsManager.customTexts,
                 maxPassages = 80
             )
-            Log.d(TAG, "加载了 ${availablePassages.size} 个段落")
+            Log.d(TAG, "同步加载了 ${availablePassages.size} 个段落, 耗时 ${System.currentTimeMillis() - start}ms")
+        } else {
+            Log.d(TAG, "使用已缓存段落 ${availablePassages.size} 个")
         }
         
         if (isCopyTypingMode && availablePassages.isNotEmpty()) {
@@ -325,10 +361,11 @@ class BlockingOverlay(
             overlayView?.let {
                 windowManager.removeView(it)
                 overlayView = null
-                Log.d(TAG, "覆盖层已隐藏 (pending状态保留)")
-            }
+                Log.d(TAG, "覆盖层已隐藏 (pending='${pendingTypedText.take(20)}' passage=${pendingPassage?.source})")
+            } ?: Log.d(TAG, "hide() 时 overlayView 已为空")
         } catch (e: Exception) {
             Log.e(TAG, "隐藏覆盖层失败", e)
+            overlayView = null
         }
     }
     
