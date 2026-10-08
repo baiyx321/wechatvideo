@@ -13,6 +13,7 @@ import com.wechatblocker.data.PreferencesManager
 import com.wechatblocker.data.TextLibraryManager
 import com.wechatblocker.logic.BlockingLogic
 import com.wechatblocker.ui.BlockingOverlay
+import org.json.JSONObject
 import java.util.concurrent.Executors
 
 class WeChatBlockerService : AccessibilityService() {
@@ -119,6 +120,12 @@ class WeChatBlockerService : AccessibilityService() {
             val isWindowChange = eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
 
             val appType = TARGET_APPS[packageName]
+            if (isWindowChange) {
+                Log.d(
+                    TAG,
+                    "窗口变化 pkg=$packageName class=$className appType=$appType blocking=$isCurrentlyBlocking fg=$currentForegroundApp"
+                )
+            }
 
             if (appType == null) {
                 if (!isWindowChange) {
@@ -347,6 +354,20 @@ class WeChatBlockerService : AccessibilityService() {
             return true
         }
         return false
+    }
+
+    fun debugSnapshot(): JSONObject {
+        return JSONObject().apply {
+            put("serviceBound", true)
+            put("blocking", isCurrentlyBlocking)
+            put("foreground", currentForegroundApp ?: "")
+            put("enabled", prefsManager.enabled)
+            put("enableDouyin", prefsManager.enableDouyin)
+            put("enableXhs", prefsManager.enableXiaohongshu)
+            put("awayMinutes", prefsManager.awayMinutes)
+            put("preloadCount", preloadedPassages.size)
+            put("forceNightPending", forceNightPending)
+        }
     }
 
     private fun hideBlockingOverlay() {

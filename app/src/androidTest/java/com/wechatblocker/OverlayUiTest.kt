@@ -19,6 +19,10 @@ import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 import java.io.File
 
+/**
+ * 仪器测试路径: UiAutomation 在 API 30 上会 unbind AccessibilityService。
+ * CI 使用 scripts/emulator_ui_test.py（纯 adb，不用 dump）。
+ */
 @RunWith(AndroidJUnit4::class)
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class OverlayUiTest {

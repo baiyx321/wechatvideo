@@ -78,6 +78,9 @@ echo "=== collect screenshots and logcat ==="
 adb pull /sdcard/Download/blocker-ui "$ART/screenshots" || true
 adb logcat -d -v time > "$ART/logcat.txt" || true
 adb shell dumpsys accessibility > "$ART/dumpsys-accessibility.txt" || true
+adb shell dumpsys window windows > "$ART/dumpsys-window.txt" || true
+adb shell run-as com.wechatblocker cat files/overlay_state.json > "$ART/overlay_state.json" || true
+adb pull /sdcard/Android/data/com.wechatblocker/files/overlay_state.json "$ART/overlay_state.json" || true
 
 if [ -d "$ART/screenshots/blocker-ui" ]; then
   mv "$ART/screenshots/blocker-ui/"* "$ART/screenshots/" 2>/dev/null || true

@@ -44,6 +44,7 @@
             <intent-filter>
                 <action android:name="com.wechatblocker.DEBUG_SET_OVERLAY_TEXT" />
                 <action android:name="com.wechatblocker.DEBUG_NIGHT_TRIGGER" />
+                <action android:name="com.wechatblocker.DEBUG_DUMP_OVERLAY" />
             </intent-filter>
         </receiver>
 

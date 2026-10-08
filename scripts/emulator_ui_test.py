@@ -1,26 +1,30 @@
 #!/usr/bin/env python3
-"""Drive the blocker app + fake apps over adb. No Instrumentation/UiAutomation."""
+"""Drive the blocker app + fake apps over adb. No Instrumentation/UiAutomation.
+
+uiautomator dump / UiAutomation unbinds AccessibilityService on API 30 and
+destroys TYPE_ACCESSIBILITY_OVERLAY. Overlay state is read via debug broadcast.
+"""
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import subprocess
 import sys
 import time
 import unicodedata
-import xml.etree.ElementTree as ET
-from dataclasses import dataclass
 from pathlib import Path
 
 ART = Path(os.environ.get("EMU_UI_ART", "emulator-ui-artifacts"))
 SHOT = ART / "screenshots"
-DUMP_PATH = "/sdcard/window_dump.xml"
 PKG = "com.wechatblocker"
 DY = "com.ss.android.ugc.aweme"
 XHS = "com.xingin.xhs"
 SERVICE = f"{PKG}/com.wechatblocker.service.WeChatBlockerService"
+RECEIVER = f"{PKG}/com.wechatblocker.service.DebugOverlayReceiver"
 CLASSICS = ("论语", "大学", "中庸", "孟子", "荀子", "管子")
+DUMP_REMOTE_EXT = f"/sdcard/Android/data/{PKG}/files/overlay_state.json"
 
 
 def run(args: list[str], check: bool = True, timeout: int = 60) -> str:
@@ -38,61 +42,8 @@ def adb(*args: str, check: bool = True, timeout: int = 60) -> str:
     return run(["adb", *args], check=check, timeout=timeout)
 
 
-def adb_shell(cmd: str, check: bool = True) -> str:
-    return adb("shell", cmd, check=check)
-
-
-@dataclass
-class Node:
-    attrib: dict
-
-    @property
-    def rid(self) -> str:
-        return self.attrib.get("resource-id", "")
-
-    @property
-    def text(self) -> str:
-        return self.attrib.get("text", "")
-
-    @property
-    def enabled(self) -> bool:
-        return self.attrib.get("enabled", "true") == "true"
-
-    def center(self) -> tuple[int, int]:
-        m = re.search(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", self.attrib.get("bounds", ""))
-        if not m:
-            raise RuntimeError(f"no bounds: {self.attrib}")
-        x1, y1, x2, y2 = map(int, m.groups())
-        return (x1 + x2) // 2, (y1 + y2) // 2
-
-
-def dump_ui() -> list[Node]:
-    adb_shell(f"uiautomator dump {DUMP_PATH}", check=False)
-    local = ART / "window_dump.xml"
-    adb("pull", DUMP_PATH, str(local), check=False)
-    if not local.exists():
-        return []
-    try:
-        root = ET.parse(local).getroot()
-    except ET.ParseError as e:
-        print("xml parse error", e, flush=True)
-        return []
-    return [Node(n.attrib) for n in root.iter("node")]
-
-
-def find_id(nodes: list[Node], suffix: str) -> Node | None:
-    want = suffix if ":" in suffix else f"{PKG}:id/{suffix}"
-    for n in nodes:
-        if n.rid == want:
-            return n
-    return None
-
-
-def find_text(nodes: list[Node], needle: str) -> Node | None:
-    for n in nodes:
-        if needle in (n.text or ""):
-            return n
-    return None
+def adb_shell(cmd: str, check: bool = True, timeout: int = 60) -> str:
+    return adb("shell", cmd, check=check, timeout=timeout)
 
 
 def screenshot(name: str) -> None:
@@ -103,33 +54,97 @@ def screenshot(name: str) -> None:
     adb("pull", remote, str(SHOT / f"{name}.png"), check=False)
 
 
-def tap_node(node: Node) -> None:
-    x, y = node.center()
-    print(f"tap {node.rid or node.text} at {x},{y}", flush=True)
-    adb_shell(f"input tap {x} {y}")
+def broadcast(action: str, extra: str = "") -> str:
+    cmd = f"am broadcast -a {action} -n {RECEIVER}"
+    if extra:
+        cmd += " " + extra
+    return adb_shell(cmd, check=False)
 
 
-def overlay_visible(nodes: list[Node] | None = None) -> bool:
-    nodes = nodes if nodes is not None else dump_ui()
-    return find_id(nodes, "promptText") is not None or find_id(nodes, "submitButton") is not None
+def _extract_json(raw: str) -> dict | None:
+    raw = (raw or "").replace("\r", "").strip()
+    if not raw:
+        return None
+    for line in reversed(raw.splitlines() or [raw]):
+        line = line.strip()
+        if line.startswith("{") and line.endswith("}"):
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(raw[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+    return None
 
 
-def wait_overlay(timeout: float = 20) -> list[Node]:
+def read_overlay_file() -> dict:
+    raw = adb_shell(f"run-as {PKG} cat files/overlay_state.json", check=False)
+    parsed = _extract_json(raw)
+    if parsed is not None:
+        return parsed
+    local = ART / "overlay_state.json"
+    adb("pull", DUMP_REMOTE_EXT, str(local), check=False)
+    if local.exists():
+        try:
+            return json.loads(local.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            print("overlay_state json parse error", e, flush=True)
+    print(f"overlay dump raw={raw[:500]!r}", flush=True)
+    return {}
+
+
+def overlay_state() -> dict:
+    broadcast("com.wechatblocker.DEBUG_DUMP_OVERLAY")
+    time.sleep(0.4)
+    state = read_overlay_file()
+    print(f"overlay_state={json.dumps(state, ensure_ascii=False)[:500]}", flush=True)
+    return state
+
+
+def overlay_window_listed() -> bool:
+    a11y = adb_shell("dumpsys accessibility", check=False)
+    if "TYPE_ACCESSIBILITY_OVERLAY" in a11y:
+        return True
+    win = adb_shell("dumpsys window windows | grep -E 'ty=2032|type=2032|TYPE_ACCESSIBILITY' | head -20", check=False)
+    return "2032" in win or "TYPE_ACCESSIBILITY" in win
+
+
+def overlay_visible(state: dict | None = None) -> bool:
+    st = state if state is not None else overlay_state()
+    if st.get("visible") is True:
+        return True
+    if st.get("visible") is False:
+        return False
+    return overlay_window_listed()
+
+
+def wait_overlay(timeout: float = 20) -> dict:
     t0 = time.time()
-    last: list[Node] = []
+    last: dict = {}
     while time.time() - t0 < timeout:
-        last = dump_ui()
-        if overlay_visible(last):
+        last = overlay_state()
+        if last.get("visible"):
+            return last
+        if overlay_window_listed() and last.get("passage"):
+            last["visible"] = True
             return last
         time.sleep(0.8)
-    adb_shell("dumpsys accessibility | head -20", check=False)
+    print("wait_overlay timeout; dumpsys accessibility (head):", flush=True)
+    adb_shell("dumpsys accessibility | head -40", check=False)
+    adb_shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head", check=False)
     return last
 
 
 def wait_gone(timeout: float = 8) -> bool:
     t0 = time.time()
     while time.time() - t0 < timeout:
-        if not overlay_visible():
+        st = overlay_state()
+        if not st.get("visible") and not overlay_window_listed():
             return True
         time.sleep(0.5)
     return False
@@ -148,12 +163,18 @@ def clean_text(text: str) -> str:
     return "".join(out)
 
 
-def set_overlay_text(text: str) -> None:
+def set_overlay_text(text: str) -> dict:
     encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
-    adb_shell(
-        f"am broadcast -a com.wechatblocker.DEBUG_SET_OVERLAY_TEXT --es b64 {encoded}"
-    )
-    time.sleep(0.8)
+    broadcast("com.wechatblocker.DEBUG_SET_OVERLAY_TEXT", f"--es b64 {encoded}")
+    t0 = time.time()
+    last: dict = {}
+    while time.time() - t0 < 6:
+        last = overlay_state()
+        typed = last.get("typedView") or last.get("typed") or ""
+        if typed == text or text[:12] in typed:
+            return last
+        time.sleep(0.4)
+    return last
 
 
 def launch(component: str) -> None:
@@ -166,9 +187,8 @@ def press_home() -> None:
     time.sleep(1.2)
 
 
-def current_pkg() -> str:
-    out = adb_shell("dumpsys window | grep mCurrentFocus", check=False)
-    return out
+def current_focus() -> str:
+    return adb_shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head", check=False)
 
 
 def service_bound() -> bool:
@@ -192,22 +212,50 @@ def enable_a11y() -> None:
     raise RuntimeError("accessibility service not bound")
 
 
-def has_anr(nodes: list[Node]) -> bool:
-    blob = " ".join(n.text for n in nodes)
-    return any(s in blob for s in ("isn't responding", "无响应", "没有响应", "ANR"))
+def ensure_a11y() -> None:
+    if not service_bound():
+        print("a11y not bound, re-enabling", flush=True)
+        enable_a11y()
 
 
-def correct_count(nodes: list[Node]) -> int:
-    n = find_id(nodes, "charCounter")
-    if not n:
-        return -1
-    m = re.search(r"正确\s*(\d+)\s*/", n.text)
+def has_anr() -> bool:
+    anr = adb_shell("dumpsys activity anr", check=False)
+    if "com.wechatblocker" in anr and "ANR in" in anr:
+        return True
+    log = adb_shell("logcat -d -s ActivityManager:I | grep -E 'ANR in com.wechatblocker' | tail", check=False)
+    return "ANR in com.wechatblocker" in log
+
+
+def correct_count(state: dict) -> int:
+    counter = state.get("counter") or ""
+    m = re.search(r"正确\s*(\d+)\s*/", counter)
     return int(m.group(1)) if m else -1
 
 
-def submit_enabled(nodes: list[Node]) -> bool:
-    n = find_id(nodes, "submitButton")
-    return bool(n and n.enabled)
+def submit_enabled(state: dict) -> bool:
+    return bool(state.get("submitEnabled"))
+
+
+def tap_center(center: dict | None, label: str) -> None:
+    if not isinstance(center, dict):
+        raise RuntimeError(f"{label} center missing: {center!r}")
+    x, y = int(center.get("x") or 0), int(center.get("y") or 0)
+    w, h = int(center.get("w") or 0), int(center.get("h") or 0)
+    print(f"tap {label} at {x},{y} size={w}x{h}", flush=True)
+    if x <= 0 or y <= 0:
+        raise RuntimeError(f"{label} has invalid screen position {x},{y}")
+    adb_shell(f"input tap {x} {y}")
+
+
+def collect_debug(tag: str) -> None:
+    path = ART / f"debug-{tag}.txt"
+    chunks = [
+        current_focus(),
+        adb_shell("dumpsys accessibility | head -50", check=False),
+        json.dumps(read_overlay_file(), ensure_ascii=False, indent=2),
+    ]
+    path.write_text("\n\n".join(chunks), encoding="utf-8")
+    print(f"wrote {path}", flush=True)
 
 
 results: list[tuple[str, str, str]] = []
@@ -221,6 +269,7 @@ def record(name: str, status: str, detail: str) -> None:
 def fail_if(cond: bool, name: str, detail: str) -> None:
     if cond:
         record(name, "FAIL", detail)
+        collect_debug(name)
         raise AssertionError(f"{name}: {detail}")
 
 
@@ -232,29 +281,39 @@ def main() -> int:
     adb_shell("wm dismiss-keyguard", check=False)
     enable_a11y()
 
-    # 13 settings, no ANR
+    # 13 settings, no ANR. dumpsys activity top does not use UiAutomation.
     launch(f"{PKG}/.ui.SettingsActivity")
     time.sleep(2)
-    nodes = dump_ui()
+    top = adb_shell(
+        "dumpsys activity top | grep -E 'SettingsActivity|enableDouyinSwitch|拦截抖音' | head -40",
+        check=False,
+    )
     screenshot("13_settings")
-    fail_if(has_anr(nodes), "13_settings", "ANR dialog")
+    fail_if(has_anr(), "13_settings", "ANR dialog")
     fail_if(
-        find_id(nodes, "enableDouyinSwitch") is None and find_text(nodes, "拦截抖音") is None,
+        "SettingsActivity" not in top and "SettingsActivity" not in current_focus(),
+        "13_settings",
+        "settings activity not resumed",
+    )
+    fail_if(
+        "enableDouyinSwitch" not in top and "拦截抖音" not in top,
         "13_settings",
         "settings widgets missing",
     )
     record("13_settings", "PASS", "settings page open, no ANR")
 
     # 08 open douyin overlay
+    ensure_a11y()
     adb_shell(f"am force-stop {DY}", check=False)
     adb_shell(f"am force-stop {XHS}", check=False)
     press_home()
+    ensure_a11y()
     launch(f"{DY}/.MainActivity")
-    nodes = wait_overlay(25)
+    state = wait_overlay(25)
     screenshot("08_passage")
-    fail_if(not overlay_visible(nodes), "08_passage", "overlay not shown on fake douyin")
-    source = find_id(nodes, "sourceText").text if find_id(nodes, "sourceText") else ""
-    passage = find_id(nodes, "promptText").text if find_id(nodes, "promptText") else ""
+    fail_if(not overlay_visible(state), "08_passage", "overlay not shown on fake douyin")
+    source = state.get("sourceView") or (f"《{state.get('source')}》" if state.get("source") else "")
+    passage = state.get("passageView") or state.get("passage") or ""
     fail_if("《" not in source, "08_passage", f"no source: {source!r}")
     fail_if(not any(b in source for b in CLASSICS), "08_passage", f"source not classic: {source!r}")
     clean = clean_text(passage)
@@ -263,69 +322,66 @@ def main() -> int:
 
     # 09 partial
     typed20 = clean[:20]
-    set_overlay_text(typed20)
-    nodes = dump_ui()
+    state = set_overlay_text(typed20)
     screenshot("09_partial")
-    count = correct_count(nodes)
-    fail_if(count < 15 or count >= 50, "09_partial", f"count={count}")
-    fail_if(submit_enabled(nodes), "09_partial", "submit enabled too early")
+    count = correct_count(state)
+    fail_if(count < 15 or count >= 50, "09_partial", f"count={count} counter={state.get('counter')!r}")
+    fail_if(submit_enabled(state), "09_partial", "submit enabled too early")
     record("09_partial", "PASS", f"count={count} submit disabled")
 
     # 10 mismatch
-    set_overlay_text(typed20 + "错错错xyz")
-    nodes = dump_ui()
+    state = set_overlay_text(typed20 + "错错错xyz")
     screenshot("10_mismatch")
-    after = correct_count(nodes)
-    hint = find_id(nodes, "mismatchHint").text if find_id(nodes, "mismatchHint") else ""
-    preview = find_id(nodes, "matchPreview").text if find_id(nodes, "matchPreview") else ""
+    after = correct_count(state)
+    hint = state.get("mismatchHint") or ""
+    preview = state.get("matchPreview") or ""
     fail_if(after > count, "10_mismatch", f"wrong chars counted {count}->{after}")
     fail_if("错误" not in hint and not preview, "10_mismatch", f"no highlight hint={hint!r}")
     record("10_mismatch", "PASS", f"count stayed {after}, hint={hint}")
-    set_overlay_text(typed20)
+    state = set_overlay_text(typed20)
 
     # 20 home
     press_home()
-    nodes = dump_ui()
+    state = overlay_state()
     screenshot("20_home_free")
-    focus = current_pkg()
-    fail_if(overlay_visible(nodes), "20_home_free", "overlay still on launcher")
+    focus = current_focus()
+    fail_if(overlay_visible(state), "20_home_free", "overlay still on launcher")
     fail_if("aweme" in focus, "20_home_free", f"still on douyin: {focus}")
     record("20_home_free", "PASS", f"launcher, no overlay, focus={focus.strip()[:80]}")
 
     # 21 other app
     adb_shell("am start -W -a android.settings.SETTINGS", check=False)
     time.sleep(1.5)
-    nodes = dump_ui()
+    state = overlay_state()
     screenshot("21_other_app")
-    fail_if(overlay_visible(nodes), "21_other_app", "overlay shown over Settings")
+    fail_if(overlay_visible(state), "21_other_app", "overlay shown over Settings")
+    fail_if("aweme" in current_focus(), "21_other_app", "still on douyin")
     record("21_other_app", "PASS", "system settings, no overlay")
 
     # 22 resume
+    ensure_a11y()
     launch(f"{DY}/.MainActivity")
-    nodes = wait_overlay(15)
+    state = wait_overlay(15)
     screenshot("22_resume")
-    fail_if(not overlay_visible(nodes), "22_resume", "overlay did not return")
-    typed = find_id(nodes, "inputText").text if find_id(nodes, "inputText") else ""
+    fail_if(not overlay_visible(state), "22_resume", "overlay did not return")
+    typed = state.get("typedView") or state.get("typed") or ""
     fail_if(typed20[:8] not in typed and typed != typed20, "22_resume", f"text lost typed={typed!r}")
     record("22_resume", "PASS", f"kept text {typed[:20]!r}")
 
     # 11 complete
-    passage = find_id(nodes, "promptText").text if find_id(nodes, "promptText") else passage
+    passage = state.get("passageView") or state.get("passage") or passage
     clean = clean_text(passage)
     fail_if(len(clean) < 50, "11_complete", f"passage < 50: {len(clean)}")
     typed50 = clean[:50]
-    set_overlay_text(typed50)
-    nodes = dump_ui()
+    state = set_overlay_text(typed50)
     screenshot("11_complete")
-    count = correct_count(nodes)
-    fail_if(count < 50, "11_complete", f"count={count}")
-    fail_if(not submit_enabled(nodes), "11_complete", "submit still disabled")
+    count = correct_count(state)
+    fail_if(count < 50, "11_complete", f"count={count} counter={state.get('counter')!r}")
+    fail_if(not submit_enabled(state), "11_complete", "submit still disabled")
     record("11_complete", "PASS", f"count={count} submit enabled")
 
     # 12 real tap submit
-    btn = find_id(nodes, "submitButton")
-    fail_if(btn is None, "12_after_submit", "no submit button")
-    tap_node(btn)
+    tap_center(state.get("submitCenter"), "submitButton")
     gone = wait_gone(8)
     screenshot("12_after_submit")
     fail_if(not gone, "12_after_submit", "overlay still visible after tap")
@@ -336,33 +392,25 @@ def main() -> int:
     time.sleep(1)
     launch(f"{DY}/.MainActivity")
     time.sleep(4)
-    nodes = dump_ui()
+    state = overlay_state()
     screenshot("15_no_retrigger")
-    fail_if(overlay_visible(nodes), "15_no_retrigger", "retriggered inside away window")
+    fail_if(overlay_visible(state), "15_no_retrigger", "retriggered inside away window")
     record("15_no_retrigger", "PASS", "no overlay on quick return")
 
     # 16 night trigger
     press_home()
     launch(f"{PKG}/.ui.SettingsActivity")
     time.sleep(1)
-    for _ in range(4):
-        adb_shell("input swipe 540 1500 540 400 300", check=False)
-        time.sleep(0.3)
-    nodes = dump_ui()
-    night = find_id(nodes, "triggerNightButton") or find_text(nodes, "夜间检查")
-    if night:
-        tap_node(night)
-    else:
-        adb_shell("am broadcast -a com.wechatblocker.DEBUG_NIGHT_TRIGGER", check=False)
+    broadcast("com.wechatblocker.DEBUG_NIGHT_TRIGGER")
     time.sleep(1)
     launch(f"{DY}/.MainActivity")
-    nodes = wait_overlay(15)
+    state = wait_overlay(15)
     screenshot("16_night_trigger")
-    fail_if(not overlay_visible(nodes), "16_night_trigger", "night overlay missing")
+    fail_if(not overlay_visible(state), "16_night_trigger", "night overlay missing")
     record("16_night_trigger", "PASS", "night overlay shown")
-    back = find_id(nodes, "backButton")
-    if back:
-        tap_node(back)
+    back = state.get("backCenter")
+    if isinstance(back, dict) and int(back.get("x") or 0) > 0:
+        tap_center(back, "backButton")
         time.sleep(1)
     press_home()
 
@@ -370,11 +418,12 @@ def main() -> int:
     adb_shell(f"am force-stop {DY}", check=False)
     adb_shell(f"am force-stop {XHS}", check=False)
     time.sleep(0.5)
+    ensure_a11y()
     launch(f"{XHS}/.MainActivity")
-    nodes = wait_overlay(20)
+    state = wait_overlay(20)
     screenshot("23_xhs_open")
-    fail_if(not overlay_visible(nodes), "23_xhs_open", "no overlay on fake xhs")
-    source = find_id(nodes, "sourceText").text if find_id(nodes, "sourceText") else ""
+    fail_if(not overlay_visible(state), "23_xhs_open", "no overlay on fake xhs")
+    source = state.get("sourceView") or (f"《{state.get('source')}》" if state.get("source") else "")
     fail_if("《" not in source, "23_xhs_open", f"xhs source missing: {source!r}")
     record("23_xhs_open", "PASS", f"xhs overlay source={source}")
 
@@ -388,6 +437,7 @@ if __name__ == "__main__":
     except Exception as e:
         print("TEST EXCEPTION", e, flush=True)
         screenshot("zz_failure")
+        collect_debug("exception")
         if not any(r[1] == "FAIL" for r in results):
             record("exception", "FAIL", str(e))
         code = 1

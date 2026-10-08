@@ -22,6 +22,7 @@ import com.wechatblocker.data.Passage
 import com.wechatblocker.data.PreferencesManager
 import com.wechatblocker.data.ReflectionEntry
 import com.wechatblocker.data.TextLibraryManager
+import org.json.JSONObject
 
 class BlockingOverlay(
     private val context: Context,
@@ -402,5 +403,55 @@ class BlockingOverlay(
             pendingTypedText = text
             Log.d(TAG, "setInputForTest len=${text.length}")
         }
+    }
+
+    /**
+     * 给自动化测试读覆盖层内容。不能走 uiautomator dump:
+     * dump 会启动 UiAutomation, 在 API 30 上会 unbind AccessibilityService 并拆掉 overlay。
+     */
+    fun dumpStateJson(): String {
+        val json = JSONObject()
+        json.put("ts", System.currentTimeMillis())
+        json.put("visible", overlayView != null)
+        json.put("hasPending", hasPendingState())
+        json.put("typed", pendingTypedText)
+        json.put("source", pendingPassage?.source ?: "")
+        json.put("passage", pendingPassage?.text ?: "")
+        val content = overlayContent
+        if (content != null) {
+            fun textOf(id: Int): String =
+                content.findViewById<TextView>(id)?.text?.toString() ?: ""
+            json.put("sourceView", textOf(R.id.sourceText))
+            json.put("passageView", textOf(R.id.promptText))
+            json.put("typedView", textOf(R.id.inputText))
+            json.put("counter", textOf(R.id.charCounter))
+            json.put("mismatchHint", textOf(R.id.mismatchHint))
+            json.put("matchPreview", textOf(R.id.matchPreview))
+            val submit = content.findViewById<Button>(R.id.submitButton)
+            val back = content.findViewById<Button>(R.id.backButton)
+            json.put("submitEnabled", submit?.isEnabled == true)
+            json.put("submitCenter", viewCenter(submit))
+            json.put("backCenter", viewCenter(back))
+        } else {
+            json.put("submitEnabled", false)
+        }
+        Log.i(TAG, "dumpState visible=${json.optBoolean("visible")} source=${json.optString("source")} counter=${json.optString("counter")} submit=${json.optBoolean("submitEnabled")}")
+        return json.toString()
+    }
+
+    private fun viewCenter(view: View?): JSONObject {
+        val o = JSONObject()
+        if (view == null) {
+            o.put("x", 0)
+            o.put("y", 0)
+            return o
+        }
+        val loc = IntArray(2)
+        view.getLocationOnScreen(loc)
+        o.put("x", loc[0] + view.width / 2)
+        o.put("y", loc[1] + view.height / 2)
+        o.put("w", view.width)
+        o.put("h", view.height)
+        return o
     }
 }
