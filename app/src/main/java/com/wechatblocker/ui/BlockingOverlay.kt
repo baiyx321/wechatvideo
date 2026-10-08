@@ -44,6 +44,9 @@ class BlockingOverlay(
     companion object {
         private const val TAG = "BlockingOverlay"
         private const val MAX_SHOW_RETRIES = 3
+        @Volatile
+        var active: BlockingOverlay? = null
+            private set
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -99,6 +102,7 @@ class BlockingOverlay(
             
             windowManager.addView(container, layoutParams)
             overlayView = container
+            active = this
             showRetries = 0
             Log.d(TAG, "覆盖层已显示, view=$container, pending='${pendingTypedText.take(20)}'")
             
@@ -382,5 +386,21 @@ class BlockingOverlay(
     fun destroy() {
         hide()
         clearPendingState()
+        if (active === this) active = null
+    }
+
+    /** 测试用: 把文字写入输入框并触发匹配逻辑. */
+    fun setInputForTest(text: String) {
+        val input = overlayContent?.findViewById<EditText>(R.id.inputText)
+        if (input == null) {
+            Log.e(TAG, "setInputForTest: 输入框不存在")
+            return
+        }
+        input.post {
+            input.setText(text)
+            input.setSelection(text.length)
+            pendingTypedText = text
+            Log.d(TAG, "setInputForTest len=${text.length}")
+        }
     }
 }

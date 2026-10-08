@@ -38,6 +38,15 @@
             android:exported="true"
             android:label="@string/debug_calibration" />
         
+        <receiver
+            android:name=".service.DebugOverlayReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.wechatblocker.DEBUG_SET_OVERLAY_TEXT" />
+                <action android:name="com.wechatblocker.DEBUG_NIGHT_TRIGGER" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".service.WeChatBlockerService"
             android:exported="false"

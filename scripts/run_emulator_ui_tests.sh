@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Drive the real app + fake apps on a KVM Android emulator.
+# Drive the real app + fake apps on a KVM Android emulator via adb.
+# Must not use Instrumentation/UiAutomation (it unbinds the AccessibilityService).
 # Must not fall back to software emulation.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ART="$ROOT/emulator-ui-artifacts"
+export EMU_UI_ART="$ROOT/emulator-ui-artifacts"
+ART="$EMU_UI_ART"
 mkdir -p "$ART/screenshots"
 
 echo "=== host arch ==="
@@ -26,7 +28,6 @@ export PATH="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}/platform-tools:$PATH"
 echo "=== devices ==="
 adb devices -l
 adb wait-for-device
-adb shell getprop sys.boot_completed || true
 for i in $(seq 1 60); do
   if [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ]; then
     echo "boot_completed=1"
@@ -42,47 +43,35 @@ adb shell svc power stayon true || true
 
 echo "=== install APKs ==="
 adb install -r -g "$ROOT/app/build/outputs/apk/debug/app-debug.apk"
-adb install -r -g "$ROOT/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 adb install -r -g "$ROOT/fakedouyin/build/outputs/apk/debug/fakedouyin-debug.apk"
 adb install -r -g "$ROOT/fakewechat/build/outputs/apk/debug/fakewechat-debug.apk"
 adb install -r -g "$ROOT/fakexiaohongshu/build/outputs/apk/debug/fakexiaohongshu-debug.apk"
 
-echo "=== optional ADBKeyBoard for Chinese input ==="
+echo "=== optional ADBKeyBoard ==="
 ADBKB_APK="/tmp/ADBKeyboard.apk"
 if curl -fsSL -L -o "$ADBKB_APK" "https://github.com/senzhk/ADBKeyBoard/raw/master/ADBKeyboard.apk"; then
-  file "$ADBKB_APK" || true
   adb install -r -g "$ADBKB_APK" || echo "ADBKeyBoard install failed, continuing"
-  echo "available IMEs:"
   adb shell ime list -a || true
   adb shell ime enable com.android.adbkeyboard/.AdbIME || true
   adb shell ime set com.android.adbkeyboard/.AdbIME || true
 else
-  echo "ADBKeyBoard download failed, tests will use ACTION_SET_TEXT"
+  echo "ADBKeyBoard download failed; tests use debug broadcast for Chinese"
 fi
 
-echo "=== enable accessibility (will be re-asserted in tests after UiAutomation starts) ==="
+echo "=== enable accessibility ==="
 adb shell settings put secure enabled_accessibility_services \
   com.wechatblocker/com.wechatblocker.service.WeChatBlockerService
 adb shell settings put secure accessibility_enabled 1
 sleep 2
-echo "enabled_accessibility_services=$(adb shell settings get secure enabled_accessibility_services)"
-echo "accessibility_enabled=$(adb shell settings get secure accessibility_enabled)"
 adb shell dumpsys accessibility | head -20 || true
 
 adb shell mkdir -p /sdcard/Download/blocker-ui
 adb logcat -c || true
 
-echo "=== instrumentation ==="
-adb shell pm list instrumentation
-echo "=== run OverlayUiTest ==="
+echo "=== run adb UI scenarios (no Instrumentation) ==="
 set +e
-adb shell am instrument -w -r \
-  -e debug false \
-  -e timeout_msec 180000 \
-  -e class com.wechatblocker.OverlayUiTest \
-  com.wechatblocker.test/com.wechatblocker.OverlayTestRunner \
-  | tee "$ART/instrument.txt"
-INSTR_STATUS=${PIPESTATUS[0]}
+python3 "$ROOT/scripts/emulator_ui_test.py"
+PY_STATUS=$?
 set -e
 
 echo "=== collect screenshots and logcat ==="
@@ -90,21 +79,21 @@ adb pull /sdcard/Download/blocker-ui "$ART/screenshots" || true
 adb logcat -d -v time > "$ART/logcat.txt" || true
 adb shell dumpsys accessibility > "$ART/dumpsys-accessibility.txt" || true
 
-echo "instrument exit=$INSTR_STATUS"
-ls -la "$ART/screenshots" || true
-# flatten if adb pull created a nested dir
 if [ -d "$ART/screenshots/blocker-ui" ]; then
   mv "$ART/screenshots/blocker-ui/"* "$ART/screenshots/" 2>/dev/null || true
+  rmdir "$ART/screenshots/blocker-ui" 2>/dev/null || true
 fi
 
-if [ "$INSTR_STATUS" -ne 0 ]; then
+ls -la "$ART/screenshots" || true
+echo "python exit=$PY_STATUS"
+if [ "$PY_STATUS" -ne 0 ]; then
   echo "UI tests failed"
-  exit "$INSTR_STATUS"
+  exit "$PY_STATUS"
 fi
-
-if ! grep -q "OK (" "$ART/instrument.txt"; then
-  echo "instrument output missing OK"
+if [ ! -f "$ART/results.txt" ] || grep -q '^FAIL' "$ART/results.txt"; then
+  echo "results missing or contain FAIL"
+  cat "$ART/results.txt" || true
   exit 1
 fi
-
 echo "UI tests passed"
+cat "$ART/results.txt"
