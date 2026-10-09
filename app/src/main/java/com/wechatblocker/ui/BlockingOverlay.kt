@@ -36,6 +36,10 @@ class BlockingOverlay(
     var overlayView: View? = null
         private set
     private var overlayContent: View? = null
+    var showCount: Int = 0
+        private set
+    var hideCount: Int = 0
+        private set
     
     // 保存pending状态
     private var pendingPassage: Passage? = null
@@ -105,7 +109,8 @@ class BlockingOverlay(
             overlayView = container
             active = this
             showRetries = 0
-            Log.d(TAG, "覆盖层已显示, view=$container, pending='${pendingTypedText.take(20)}'")
+            showCount += 1
+            Log.d(TAG, "覆盖层已显示, view=$container, showCount=$showCount pending='${pendingTypedText.take(20)}'")
             
         } catch (e: WindowManager.BadTokenException) {
             Log.e(TAG, "addView BadTokenException, retries=$showRetries", e)
@@ -366,7 +371,8 @@ class BlockingOverlay(
             overlayView?.let {
                 windowManager.removeView(it)
                 overlayView = null
-                Log.d(TAG, "覆盖层已隐藏 (pending='${pendingTypedText.take(20)}' passage=${pendingPassage?.source})")
+                hideCount += 1
+                Log.d(TAG, "覆盖层已隐藏 hideCount=$hideCount (pending='${pendingTypedText.take(20)}' passage=${pendingPassage?.source})")
             } ?: Log.d(TAG, "hide() 时 overlayView 已为空")
         } catch (e: Exception) {
             Log.e(TAG, "隐藏覆盖层失败", e)
@@ -413,6 +419,8 @@ class BlockingOverlay(
         val json = JSONObject()
         json.put("ts", System.currentTimeMillis())
         json.put("visible", overlayView != null)
+        json.put("showCount", showCount)
+        json.put("hideCount", hideCount)
         json.put("hasPending", hasPendingState())
         json.put("typed", pendingTypedText)
         json.put("source", pendingPassage?.source ?: "")

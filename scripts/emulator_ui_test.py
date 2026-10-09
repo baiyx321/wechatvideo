@@ -457,6 +457,24 @@ def main() -> int:
     fail_if(len(clean) < 20, "08_passage", f"passage too short: {passage!r}")
     record("08_passage", "PASS", f"source={source} len={len(clean)}")
 
+    # Overlay must stay up: addView must not bounce hide/show.
+    s1 = overlay_state()
+    show0 = int(s1.get("showCount") or 0)
+    hide0 = int(s1.get("hideCount") or 0)
+    fail_if(show0 < 1, "08_overlay_stable", f"showCount={show0}")
+    fail_if(hide0 != 0, "08_overlay_stable", f"overlay already hid after first show hideCount={hide0} showCount={show0}")
+    fail_if(show0 > 1, "08_overlay_stable", f"overlay recreated showCount={show0}")
+    time.sleep(2.2)
+    s2 = overlay_state()
+    screenshot("08_overlay_stable")
+    fail_if(not s2.get("visible"), "08_overlay_stable", "overlay vanished during hold")
+    fail_if(
+        int(s2.get("hideCount") or 0) != hide0 or int(s2.get("showCount") or 0) != show0,
+        "08_overlay_stable",
+        f"churn show {show0}->{s2.get('showCount')} hide {hide0}->{s2.get('hideCount')}",
+    )
+    record("08_overlay_stable", "PASS", f"held 2s show={show0} hide={hide0}")
+
     # 09 partial
     typed20 = clean[:20]
     state = set_overlay_text(typed20)

@@ -4,14 +4,17 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.wechatblocker.data.AppUsageTracker
 import com.wechatblocker.data.Passage
 import com.wechatblocker.data.PreferencesManager
 import com.wechatblocker.data.TextLibraryManager
 import com.wechatblocker.logic.BlockingLogic
+import com.wechatblocker.logic.OverlayEventPolicy
 import com.wechatblocker.ui.BlockingOverlay
 import org.json.JSONObject
 import java.util.concurrent.Executors
@@ -29,6 +32,8 @@ class WeChatBlockerService : AccessibilityService() {
     private val ioExecutor = Executors.newSingleThreadExecutor()
     @Volatile
     private var preloadedPassages: List<Passage> = emptyList()
+    private var suppressLeaveUntilElapsed = 0L
+    private val pendingHideRunnable = Runnable { performHideForLeave("debounced") }
 
     companion object {
         private const val TAG = "WeChatBlockerService"
@@ -51,6 +56,9 @@ class WeChatBlockerService : AccessibilityService() {
             "com.xingin.xhs" to "xiaohongshu",
             "com.xingin.xhs.test" to "xiaohongshu"
         )
+
+        private const val SHOW_STABLE_MS = 400L
+        private const val HIDE_DEBOUNCE_MS = 250L
 
         private val OWN_UI_CLASSES = listOf(
             "MainActivity",
@@ -132,17 +140,7 @@ class WeChatBlockerService : AccessibilityService() {
                 if (!isWindowChange) {
                     return
                 }
-                Log.d(TAG, "离开目标应用, pkg=$packageName class=$className")
-                if (isCurrentlyBlocking) {
-                    Log.d(TAG, "隐藏overlay但保留pending状态")
-                    overlay?.hide()
-                }
-                if (currentForegroundApp != null) {
-                    usageTracker.setLastLeftTime(currentForegroundApp!!, System.currentTimeMillis())
-                    Log.d(TAG, "记录离开时间: $currentForegroundApp")
-                    currentForegroundApp = null
-                    cancelNightCheck()
-                }
+                handlePossibleLeave(packageName, className)
                 return
             }
 
@@ -177,6 +175,7 @@ class WeChatBlockerService : AccessibilityService() {
             }
 
             if (isCurrentlyBlocking) {
+                cancelPendingHide()
                 if (overlay?.overlayView == null && overlay?.hasPendingState() == true) {
                     Log.d(TAG, "返回目标应用,恢复overlay (不计为新的on-open) pkg=$packageName")
                     showOverlayView()
@@ -218,20 +217,123 @@ class WeChatBlockerService : AccessibilityService() {
     }
 
     private fun isNoiseEvent(packageName: String, className: String?): Boolean {
-        if (packageName == "com.android.systemui") return true
-        if (packageName.contains("inputmethod", ignoreCase = true)) return true
-        if (packageName.contains("keyboard", ignoreCase = true)) return true
-        if (packageName == "com.android.adbkeyboard") return true
-        if (packageName.endsWith(".permissioncontroller")) return true
-        if (packageName == applicationContext.packageName) {
-            val isOwnActivity = OWN_UI_CLASSES.any { className?.contains(it) == true }
-            if (isOwnActivity) {
-                Log.d(TAG, "自身界面 $className, 按离开目标处理")
-                return false
-            }
-            return true
+        if (OverlayEventPolicy.isOwnUi(packageName, className, applicationContext.packageName, OWN_UI_CLASSES)) {
+            Log.d(TAG, "自身界面 $className, 按离开目标处理")
+            return false
         }
-        return false
+        return OverlayEventPolicy.isNoise(
+            packageName,
+            className,
+            applicationContext.packageName,
+            OWN_UI_CLASSES
+        )
+    }
+
+    private fun handlePossibleLeave(packageName: String, className: String?) {
+        if (!isCurrentlyBlocking && currentForegroundApp == null) {
+            return
+        }
+        if (OverlayEventPolicy.isLauncherOrRecents(packageName, className)) {
+            cancelPendingHide()
+            performHideForLeave("launcher $packageName", force = true)
+            return
+        }
+        val overlayJustShown = SystemClock.elapsedRealtime() < suppressLeaveUntilElapsed
+        if (OverlayEventPolicy.shouldIgnoreLeaveWhileOverlayShowing(
+                packageName,
+                className,
+                currentForegroundApp,
+                overlayJustShown
+            )
+        ) {
+            Log.d(TAG, "忽略假离开(overlay噪声) pkg=$packageName class=$className justShown=$overlayJustShown")
+            return
+        }
+        val underlying = underlyingApplicationPackage()
+        if (underlying != null && TARGET_APPS.containsKey(underlying)) {
+            Log.d(TAG, "忽略离开事件, 目标应用仍在窗口列表 underlying=$underlying eventPkg=$packageName")
+            return
+        }
+        Log.d(TAG, "延迟隐藏 overlay, 确认是否真的离开 pkg=$packageName class=$className")
+        handler.removeCallbacks(pendingHideRunnable)
+        handler.postDelayed(pendingHideRunnable, HIDE_DEBOUNCE_MS)
+    }
+
+    private fun performHideForLeave(reason: String, force: Boolean = false) {
+        if (!isCurrentlyBlocking) return
+        if (!force) {
+            val underlying = underlyingApplicationPackage()
+            if (underlying != null && TARGET_APPS.containsKey(underlying)) {
+                Log.d(TAG, "取消隐藏, 目标仍在 underlying=$underlying ($reason)")
+                return
+            }
+        }
+        Log.d(TAG, "隐藏overlay但保留pending状态 ($reason)")
+        overlay?.hide()
+        if (currentForegroundApp != null) {
+            usageTracker.setLastLeftTime(currentForegroundApp!!, System.currentTimeMillis())
+            Log.d(TAG, "记录离开时间: $currentForegroundApp")
+            currentForegroundApp = null
+            cancelNightCheck()
+        }
+    }
+
+    private fun cancelPendingHide() {
+        handler.removeCallbacks(pendingHideRunnable)
+    }
+
+    private fun underlyingApplicationPackage(): String? {
+        val wins = try {
+            windows
+        } catch (e: Exception) {
+            Log.w(TAG, "读取 windows 失败", e)
+            null
+        } ?: return try {
+            rootInActiveWindow?.packageName?.toString()
+        } catch (_: Exception) {
+            null
+        }
+        var focusedApp: String? = null
+        var anyApp: String? = null
+        var overlayFocused = false
+        for (window in wins) {
+            val type = try {
+                window.type
+            } catch (_: Exception) {
+                continue
+            }
+            val pkg = packageOfWindow(window) ?: continue
+            if (pkg == applicationContext.packageName) {
+                if (type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY &&
+                    (window.isFocused || window.isActive)
+                ) {
+                    overlayFocused = true
+                }
+                continue
+            }
+            if (type == AccessibilityWindowInfo.TYPE_APPLICATION) {
+                anyApp = pkg
+                if (window.isFocused || window.isActive) {
+                    focusedApp = pkg
+                }
+            }
+        }
+        return focusedApp ?: if (overlayFocused) anyApp else anyApp
+    }
+
+    private fun packageOfWindow(window: AccessibilityWindowInfo): String? {
+        var root: AccessibilityNodeInfo? = null
+        return try {
+            root = window.root
+            root?.packageName?.toString()
+        } catch (_: Exception) {
+            null
+        } finally {
+            try {
+                root?.recycle()
+            } catch (_: Exception) {
+            }
+        }
     }
 
     private fun isAppEnabled(appType: String): Boolean {
@@ -324,6 +426,7 @@ class WeChatBlockerService : AccessibilityService() {
     }
 
     private fun showOverlayView() {
+        suppressLeaveUntilElapsed = SystemClock.elapsedRealtime() + SHOW_STABLE_MS
         overlay?.show()
     }
 
@@ -368,6 +471,9 @@ class WeChatBlockerService : AccessibilityService() {
             put("awayMinutes", prefsManager.awayMinutes)
             put("preloadCount", preloadedPassages.size)
             put("forceNightPending", forceNightPending)
+            put("showCount", overlay?.showCount ?: 0)
+            put("hideCount", overlay?.hideCount ?: 0)
+            put("overlayVisible", overlay?.overlayView != null)
         }
     }
 
@@ -381,6 +487,7 @@ class WeChatBlockerService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        cancelPendingHide()
         hideBlockingOverlay()
         overlay?.destroy()
         overlay = null
@@ -392,6 +499,7 @@ class WeChatBlockerService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         Log.d(TAG, "服务unbound, 销毁overlay以免BadTokenException")
+        cancelPendingHide()
         hideBlockingOverlay()
         overlay?.destroy()
         overlay = null
