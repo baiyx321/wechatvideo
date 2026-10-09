@@ -1,0 +1,97 @@
+name: Build and Release APK
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        packages: 'platform-tools'
+      
+    - name: Cache Gradle packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+          
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+      
+    - name: Build release APK
+      run: ./gradlew assembleRelease --stacktrace
+      
+    - name: Rename APK
+      run: |
+        mkdir -p release
+        cp app/build/outputs/apk/release/app-release.apk release/wechatvideo.apk
+        
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: wechatvideo-release-apk
+        path: release/wechatvideo.apk
+        retention-days: 90
+        
+    - name: Create or Update Latest Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: latest
+        name: 视频号拦截器 Latest Release
+        body: |
+          ## 视频号拦截器 - 最新版本
+          
+          ### 直接下载链接
+          
+          ```
+          https://github.com/baiyx321/wechatvideo/releases/latest/download/wechatvideo.apk
+          ```
+          
+          ### 功能特性
+          
+          - 支持微信视频号拦截
+          - 支持抖音、抖音极速版、小红书拦截
+          - 离开超过N分钟后再打开时触发提醒
+          - 每晚23:00后首次触发夜间提醒
+          - 文本库抄写模式:古文经典段落抄写(论语、大学、中庸、孟子、荀子、管子)
+          - 字符匹配计数与错误高亮
+          - 可自定义设置
+          
+          ### 安装说明
+          
+          1. 在手机浏览器中直接访问上述下载链接
+          2. 下载完成后安装APK
+          3. 首次安装需要授予"无障碍服务"权限
+          4. 根据需要在设置中调整触发条件和启用的应用
+          
+          ---
+          
+          构建时间: ${{ github.event.head_commit.timestamp }}
+          提交: ${{ github.sha }}
+        files: release/wechatvideo.apk
+        draft: false
+        prerelease: false
+        make_latest: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,95 @@
+name: Emulator UI tests
+
+on:
+  push:
+    branches: [ cursor/wechat-video-blocker-782f, cursor/* ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  emulator-ui:
+    name: KVM emulator UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Refuse ARM runners
+        run: |
+          set -euo pipefail
+          arch="$(uname -m)"
+          echo "runner arch=$arch"
+          if [ "$arch" != "x86_64" ]; then
+            echo "Need x64 GitHub-hosted runner (ARM has no working Android KVM here)"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+
+      - name: Make /dev/kvm writable
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sleep 1
+          ls -l /dev/kvm || true
+          if [ ! -w /dev/kvm ]; then
+            echo "udev did not make KVM writable; trying chmod 666"
+            sudo chmod 666 /dev/kvm || true
+          fi
+          ls -l /dev/kvm
+          if [ ! -w /dev/kvm ]; then
+            echo "KVM is not writable; refusing software emulation"
+            exit 1
+          fi
+          echo "KVM is writable"
+
+      - name: Grant execute permission
+        run: chmod +x gradlew scripts/run_emulator_ui_tests.sh
+
+      - name: Build app, tests and fake apps
+        run: |
+          ./gradlew assembleDebug assembleAndroidTest \
+            :fakedouyin:assembleDebug \
+            :fakewechat:assembleDebug \
+            :fakexiaohongshu:assembleDebug \
+            --stacktrace
+
+      - name: Run UI tests on KVM emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_3a
+          force-avd-creation: true
+          disable-animations: true
+          emulator-boot-timeout: 600
+          ram-size: 2048
+          heap-size: 512
+          cores: 2
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot-save
+          script: bash scripts/run_emulator_ui_tests.sh
+
+      - name: Upload screenshots and logcat
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-ui-artifacts
+          path: emulator-ui-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
