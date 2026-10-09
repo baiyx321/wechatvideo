@@ -1,11 +1,13 @@
 package com.wechatblocker.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -79,8 +81,23 @@ class WeChatBlockerService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        val info = serviceInfo
+        info.flags = info.flags or AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
+        serviceInfo = info
         Log.d(TAG, "服务已连接, 开始预加载段落")
         preloadPassagesAsync()
+    }
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_UP &&
+            (event.keyCode == KeyEvent.KEYCODE_HOME || event.keyCode == KeyEvent.KEYCODE_APP_SWITCH)
+        ) {
+            if (isCurrentlyBlocking && overlay?.overlayView != null) {
+                Log.d(TAG, "按键离开 overlay key=${event.keyCode}")
+                performHideForLeave("key ${event.keyCode}", force = true)
+            }
+        }
+        return false
     }
 
     private fun preloadPassagesAsync() {
@@ -118,6 +135,17 @@ class WeChatBlockerService : AccessibilityService() {
 
             if (!prefsManager.enabled) {
                 return
+            }
+
+            // Overlay 显示时焦点往往在 TYPE_ACCESSIBILITY_OVERLAY 上，Home 可能只来
+            // TYPE_WINDOWS_CHANGED 或 launcher 的 FrameLayout。必须在噪声过滤前看窗口列表。
+            if (isCurrentlyBlocking && overlay?.overlayView != null &&
+                (eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
+                    eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
+            ) {
+                if (hideIfUserLeftForeground(eventType, packageName, className)) {
+                    return
+                }
             }
 
             if (isNoiseEvent(packageName, className)) {
@@ -229,6 +257,64 @@ class WeChatBlockerService : AccessibilityService() {
         )
     }
 
+    private fun overlayJustShown(): Boolean {
+        return SystemClock.elapsedRealtime() < suppressLeaveUntilElapsed
+    }
+
+    private fun hideIfUserLeftForeground(eventType: Int, packageName: String, className: String?): Boolean {
+        if (OverlayEventPolicy.isLauncherOrRecents(packageName, className)) {
+            performHideForLeave("launcher activity $packageName", force = true)
+            return true
+        }
+        // addView 会立刻打乱焦点和 windows 列表；刚显示时不要根据不完整窗口列表 hide。
+        if (overlayJustShown()) {
+            return false
+        }
+        if (foregroundShowsUserLeftTarget()) {
+            performHideForLeave("foreground left event=$eventType pkg=$packageName", force = true)
+            return true
+        }
+        return false
+    }
+
+    private fun foregroundShowsUserLeftTarget(): Boolean {
+        val wins = try {
+            windows
+        } catch (e: Exception) {
+            Log.w(TAG, "读取 windows 失败", e)
+            return false
+        } ?: return false
+        var targetPresent = false
+        var targetActive = false
+        var launcherPresent = false
+        var launcherActive = false
+        var otherAppPresent = false
+        val own = applicationContext.packageName
+        for (window in wins) {
+            val type = try {
+                window.type
+            } catch (_: Exception) {
+                continue
+            }
+            if (type != AccessibilityWindowInfo.TYPE_APPLICATION) continue
+            val pkg = packageOfWindow(window) ?: continue
+            if (TARGET_APPS.containsKey(pkg)) {
+                targetPresent = true
+                if (window.isFocused || window.isActive) targetActive = true
+            } else if (OverlayEventPolicy.isLauncherPackage(pkg)) {
+                launcherPresent = true
+                if (window.isFocused || window.isActive) launcherActive = true
+            } else if (pkg != own) {
+                otherAppPresent = true
+            }
+        }
+        if (targetActive) return false
+        if (launcherActive) return true
+        // 空列表或只有 overlay 时先不动，避免 addView 过程中误 hide。
+        if (!targetPresent && (launcherPresent || otherAppPresent)) return true
+        return false
+    }
+
     private fun handlePossibleLeave(packageName: String, className: String?) {
         if (!isCurrentlyBlocking && currentForegroundApp == null) {
             return
@@ -238,7 +324,7 @@ class WeChatBlockerService : AccessibilityService() {
             performHideForLeave("launcher $packageName", force = true)
             return
         }
-        val overlayJustShown = SystemClock.elapsedRealtime() < suppressLeaveUntilElapsed
+        val overlayJustShown = overlayJustShown()
         if (OverlayEventPolicy.shouldIgnoreLeaveWhileOverlayShowing(
                 packageName,
                 className,

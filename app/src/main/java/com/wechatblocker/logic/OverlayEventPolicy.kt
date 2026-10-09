@@ -27,12 +27,16 @@ object OverlayEventPolicy {
         return false
     }
 
+    fun isLauncherPackage(packageName: String): Boolean {
+        val pkg = packageName.lowercase()
+        return pkg.contains("launcher") || pkg.contains("trebuchet")
+    }
+
     fun isLauncherOrRecents(packageName: String, className: String?): Boolean {
         if (isRecentsUi(className)) return true
         val cls = className ?: return false
         if (cls.contains("Launcher")) return true
-        val pkg = packageName.lowercase()
-        return (pkg.contains("launcher") || pkg.contains("trebuchet")) && cls.contains("Activity")
+        return isLauncherPackage(packageName) && cls.contains("Activity")
     }
 
     fun isTransientWindow(packageName: String, className: String?): Boolean {

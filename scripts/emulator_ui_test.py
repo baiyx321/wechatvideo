@@ -497,12 +497,14 @@ def main() -> int:
 
     # 20 home
     press_home()
+    gone = wait_gone(5)
     state = overlay_state()
     screenshot("20_home_free")
     focus = current_focus()
-    fail_if(overlay_visible(state), "20_home_free", "overlay still on launcher")
+    fail_if(not gone or overlay_visible(state), "20_home_free", "overlay still on launcher")
+    fail_if(int(state.get("hideCount") or 0) < 1, "20_home_free", f"home did not hide overlay hideCount={state.get('hideCount')}")
     fail_if("aweme" in focus, "20_home_free", f"still on douyin: {focus}")
-    record("20_home_free", "PASS", f"launcher, no overlay, focus={focus.strip()[:80]}")
+    record("20_home_free", "PASS", f"launcher, no overlay, hideCount={state.get('hideCount')} focus={focus.strip()[:80]}")
 
     # 21 other app
     adb_shell("am start -W -a android.settings.SETTINGS", check=False)

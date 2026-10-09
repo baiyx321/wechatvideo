@@ -59,6 +59,15 @@ class OverlayEventPolicyTest {
                 "android.widget.FrameLayout"
             )
         )
+        assertTrue(
+            OverlayEventPolicy.isLauncherPackage("com.google.android.apps.nexuslauncher")
+        )
+        assertTrue(
+            OverlayEventPolicy.isLauncherPackage("com.android.launcher3")
+        )
+        assertFalse(
+            OverlayEventPolicy.isLauncherPackage("com.ss.android.ugc.aweme")
+        )
     }
 
     @Test
