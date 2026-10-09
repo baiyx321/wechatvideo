@@ -1,5 +1,6 @@
 package com.wechatblocker.util
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
@@ -8,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
+import android.view.accessibility.AccessibilityManager
 import com.wechatblocker.service.WeChatBlockerService
 
 /**
@@ -40,28 +42,59 @@ object AccessibilitySettingsLauncher {
         packageName: String,
         serviceClass: String
     ): Boolean {
-        if (enabledServices.isNullOrBlank()) return false
-        val compactClass = serviceClass.removePrefix("$packageName.")
+        if (enabledServices.isNullOrBlank() || enabledServices == "null") return false
+        val shortClass = if (serviceClass.startsWith("$packageName.")) {
+            "." + serviceClass.removePrefix("$packageName.")
+        } else {
+            serviceClass
+        }
+        val simpleName = serviceClass.substringAfterLast('.')
+        val aliases = setOf(
+            "$packageName/$serviceClass",
+            "$packageName/$shortClass",
+            "$packageName/$simpleName"
+        )
         return enabledServices.split(':').any { entry ->
             val item = entry.trim()
             if (item.isEmpty()) return@any false
-            item.contains(serviceClass) ||
-                item == "$packageName/$serviceClass" ||
-                item == "$packageName/$compactClass" ||
-                item.endsWith("/$compactClass")
+            item in aliases ||
+                item.contains(serviceClass) ||
+                item.endsWith(shortClass) ||
+                item.endsWith("/$simpleName")
         }
     }
 
     fun isServiceEnabled(context: Context): Boolean {
+        if (isEnabledViaManager(context)) return true
         val enabled = Settings.Secure.getString(
             context.contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         )
-        return isServiceListed(
+        val listed = isServiceListed(
             enabled,
             context.packageName,
             WeChatBlockerService::class.java.name
         )
+        Log.d(TAG, "isServiceEnabled manager=false listed=$listed raw=${enabled?.take(120)}")
+        return listed
+    }
+
+    private fun isEnabledViaManager(context: Context): Boolean {
+        return try {
+            val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+                ?: return false
+            val want = WeChatBlockerService::class.java.name
+            val list = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+                ?: emptyList()
+            list.any { info ->
+                val si = info.resolveInfo?.serviceInfo ?: return@any false
+                si.packageName == context.packageName &&
+                    (si.name == want || si.name.endsWith(".WeChatBlockerService"))
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "AccessibilityManager 查询失败", e)
+            false
+        }
     }
 
     fun resolveTarget(sdkInt: Int, flatten: String): SettingsTarget {

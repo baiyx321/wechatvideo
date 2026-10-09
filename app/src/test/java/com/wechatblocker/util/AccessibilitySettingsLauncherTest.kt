@@ -25,9 +25,21 @@ class AccessibilitySettingsLauncherTest {
     }
 
     @Test
+    fun listedWhenShortComponentName() {
+        assertTrue(
+            AccessibilitySettingsLauncher.isServiceListed(
+                "com.wechatblocker/.service.WeChatBlockerService",
+                pkg,
+                cls
+            )
+        )
+    }
+
+    @Test
     fun notListedWhenEmptyOrUnrelated() {
         assertFalse(AccessibilitySettingsLauncher.isServiceListed(null, pkg, cls))
         assertFalse(AccessibilitySettingsLauncher.isServiceListed("", pkg, cls))
+        assertFalse(AccessibilitySettingsLauncher.isServiceListed("null", pkg, cls))
         assertFalse(AccessibilitySettingsLauncher.isServiceListed("com.other/.Svc", pkg, cls))
     }
 

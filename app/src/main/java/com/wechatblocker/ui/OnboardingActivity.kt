@@ -1,9 +1,14 @@
 package com.wechatblocker.ui
 
 import android.content.Intent
+import android.database.ContentObserver
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.view.View
+import android.view.accessibility.AccessibilityManager
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -19,6 +24,18 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var openButton: Button
     private lateinit var retryHint: TextView
     private var openedSettingsOnce = false
+    private var continued = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val settingsObserver = object : ContentObserver(mainHandler) {
+        override fun onChange(selfChange: Boolean) {
+            maybeContinue("settings")
+        }
+    }
+
+    private val a11yListener = AccessibilityManager.AccessibilityStateChangeListener {
+        maybeContinue("a11y-state")
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,20 +56,32 @@ class OnboardingActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         instance = this
+        contentResolver.registerContentObserver(
+            Settings.Secure.getUriFor(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES),
+            false,
+            settingsObserver
+        )
+        contentResolver.registerContentObserver(
+            Settings.Secure.getUriFor(Settings.Secure.ACCESSIBILITY_ENABLED),
+            false,
+            settingsObserver
+        )
+        accessibilityManager()?.addAccessibilityStateChangeListener(a11yListener)
     }
 
     override fun onStop() {
+        try {
+            contentResolver.unregisterContentObserver(settingsObserver)
+        } catch (_: Exception) {
+        }
+        accessibilityManager()?.removeAccessibilityStateChangeListener(a11yListener)
         if (instance === this) instance = null
         super.onStop()
     }
 
     override fun onResume() {
         super.onResume()
-        if (AccessibilitySettingsLauncher.isServiceEnabled(this)) {
-            Log.d(TAG, "返回时服务已启用，进入主界面")
-            continueToApp()
-            return
-        }
+        if (maybeContinue("resume")) return
         if (!::openButton.isInitialized) return
         if (openedSettingsOnce) {
             retryHint.visibility = View.VISIBLE
@@ -61,11 +90,25 @@ class OnboardingActivity : AppCompatActivity() {
         }
     }
 
+    private fun maybeContinue(reason: String): Boolean {
+        if (continued || isFinishing) return continued
+        if (!AccessibilitySettingsLauncher.isServiceEnabled(this)) return false
+        Log.d(TAG, "服务已启用 ($reason)，进入主界面")
+        continueToApp()
+        return true
+    }
+
     private fun continueToApp() {
+        if (continued) return
+        continued = true
         val intent = Intent(this, MainActivity::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         startActivity(intent)
         finish()
+    }
+
+    private fun accessibilityManager(): AccessibilityManager? {
+        return getSystemService(ACCESSIBILITY_SERVICE) as? AccessibilityManager
     }
 
     fun dumpStateJson(): String {

@@ -389,8 +389,20 @@ def main() -> int:
     record("01_onboarding_retry", "PASS", f"button={state.get('buttonText')}")
 
     enable_a11y()
-    launch(f"{PKG}/.ui.MainActivity")
-    time.sleep(1.5)
+    reached_main = False
+    for _ in range(20):
+        focus = current_focus()
+        if "MainActivity" in focus and "OnboardingActivity" not in focus:
+            reached_main = True
+            break
+        time.sleep(0.4)
+    if not reached_main:
+        # Bring the task forward; onboarding should have continued once the service bound.
+        adb_shell(
+            f"am start -W -n {PKG}/.ui.MainActivity -f 0x10008000",
+            check=False,
+        )
+        time.sleep(1.2)
     screenshot("01_onboarding_enabled")
     focus = current_focus()
     top = adb_shell(
