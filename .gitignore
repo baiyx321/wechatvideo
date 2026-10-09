@@ -89,3 +89,5 @@ lint/tmp/
 
 # Local emulator UI test dumps
 emulator-ui-artifacts/
+__pycache__/
+*.pyc

@@ -12,6 +12,12 @@
     <string name="service_enabled">已启用</string>
     <string name="service_disabled">未启用</string>
     <string name="enable_service">启用服务</string>
+    <string name="onboarding_title">先开启无障碍服务</string>
+    <string name="onboarding_body">系统不允许本应用自己打开无障碍开关。拦截微信视频号、抖音和小红书时，需要这个权限，才能在那些应用上方显示抄写提醒。\n\n下一步会打开系统设置，找到「视频号拦截器」后打开开关即可，通常只需一次点击。</string>
+    <string name="onboarding_privacy">不会读取聊天内容或密码，只用于识别当前打开的应用。</string>
+    <string name="onboarding_open_settings">去系统设置开启</string>
+    <string name="onboarding_retry_hint">还没有开启。请在无障碍列表里找到「视频号拦截器」，打开开关后再回来。</string>
+    <string name="onboarding_retry_button">再去设置里打开</string>
     <string name="open_settings">打开设置</string>
     <string name="open_history">查看历史</string>
     <string name="open_debug">调试校准</string>

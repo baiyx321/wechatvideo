@@ -24,7 +24,6 @@ XHS = "com.xingin.xhs"
 SERVICE = f"{PKG}/com.wechatblocker.service.WeChatBlockerService"
 RECEIVER = f"{PKG}/com.wechatblocker.service.DebugOverlayReceiver"
 CLASSICS = ("论语", "大学", "中庸", "孟子", "荀子", "管子")
-DUMP_REMOTE_EXT = f"/sdcard/Android/data/{PKG}/files/overlay_state.json"
 
 
 def run(args: list[str], check: bool = True, timeout: int = 60) -> str:
@@ -82,26 +81,74 @@ def _extract_json(raw: str) -> dict | None:
     return None
 
 
-def read_overlay_file() -> dict:
-    raw = adb_shell(f"run-as {PKG} cat files/overlay_state.json", check=False)
+def read_json_file(name: str) -> dict:
+    raw = adb_shell(f"run-as {PKG} cat files/{name}", check=False)
     parsed = _extract_json(raw)
     if parsed is not None:
         return parsed
-    local = ART / "overlay_state.json"
-    adb("pull", DUMP_REMOTE_EXT, str(local), check=False)
+    local = ART / name
+    adb(
+        "pull",
+        f"/sdcard/Android/data/{PKG}/files/{name}",
+        str(local),
+        check=False,
+    )
     if local.exists():
         try:
             return json.loads(local.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
-            print("overlay_state json parse error", e, flush=True)
-    print(f"overlay dump raw={raw[:500]!r}", flush=True)
+            print(f"{name} json parse error", e, flush=True)
+    print(f"{name} raw={raw[:500]!r}", flush=True)
     return {}
+
+
+def onboarding_state() -> dict:
+    broadcast("com.wechatblocker.DEBUG_DUMP_ONBOARDING")
+    time.sleep(0.4)
+    state = read_json_file("onboarding_state.json")
+    print(f"onboarding_state={json.dumps(state, ensure_ascii=False)[:500]}", flush=True)
+    return state
+
+
+def wait_onboarding(timeout: float = 10) -> dict:
+    t0 = time.time()
+    last: dict = {}
+    while time.time() - t0 < timeout:
+        last = onboarding_state()
+        if last.get("visible"):
+            center = last.get("openCenter") or {}
+            if int(center.get("x") or 0) > 0:
+                return last
+        time.sleep(0.5)
+    adb_shell("dumpsys activity top | grep -E 'Onboarding|MainActivity|openAccessibility' | head -40", check=False)
+    return last
+
+
+def in_accessibility_settings() -> bool:
+    focus = current_focus()
+    resumed = adb_shell(
+        "dumpsys activity activities | grep -E 'mResumedActivity|mFocusedActivity|topResumedActivity' | head",
+        check=False,
+    )
+    blob = (focus + "\n" + resumed).lower()
+    print(f"a11y_settings_focus={focus.strip()[:200]}", flush=True)
+    if "com.android.settings" not in blob and "settings" not in blob:
+        return False
+    return any(
+        token in blob
+        for token in (
+            "accessibility",
+            "subsettings",
+            "accessibilitysettings",
+            "toggleaccessibility",
+        )
+    )
 
 
 def overlay_state() -> dict:
     broadcast("com.wechatblocker.DEBUG_DUMP_OVERLAY")
     time.sleep(0.4)
-    state = read_overlay_file()
+    state = read_json_file("overlay_state.json")
     print(f"overlay_state={json.dumps(state, ensure_ascii=False)[:500]}", flush=True)
     return state
 
@@ -201,6 +248,17 @@ def service_bound() -> bool:
     return bound and not crashed
 
 
+def disable_a11y() -> None:
+    """CI-only: start the onboarding path with the service off. Never used by the app."""
+    adb_shell("settings put secure enabled_accessibility_services null", check=False)
+    adb_shell("settings put secure accessibility_enabled 0", check=False)
+    for _ in range(15):
+        if not service_bound():
+            return
+        time.sleep(0.3)
+    print("WARN a11y still bound after disable", flush=True)
+
+
 def enable_a11y() -> None:
     adb_shell(f"settings put secure enabled_accessibility_services {SERVICE}")
     adb_shell("settings put secure accessibility_enabled 1")
@@ -252,7 +310,8 @@ def collect_debug(tag: str) -> None:
     chunks = [
         current_focus(),
         adb_shell("dumpsys accessibility | head -50", check=False),
-        json.dumps(read_overlay_file(), ensure_ascii=False, indent=2),
+        json.dumps(read_json_file("overlay_state.json"), ensure_ascii=False, indent=2),
+        json.dumps(read_json_file("onboarding_state.json"), ensure_ascii=False, indent=2),
     ]
     path.write_text("\n\n".join(chunks), encoding="utf-8")
     print(f"wrote {path}", flush=True)
@@ -279,7 +338,73 @@ def main() -> int:
     adb_shell("mkdir -p /sdcard/Download/blocker-ui")
     adb_shell("input keyevent KEYCODE_WAKEUP", check=False)
     adb_shell("wm dismiss-keyguard", check=False)
+    disable_a11y()
+    adb_shell(f"am force-stop {PKG}", check=False)
+    launch(f"{PKG}/.ui.MainActivity")
+    state = wait_onboarding(12)
+    screenshot("01_onboarding")
+    title = state.get("title") or ""
+    expl = state.get("explanation") or ""
+    top = adb_shell(
+        "dumpsys activity top | grep -E 'OnboardingActivity|onboardingTitle|无障碍|openAccessibility' | head -40",
+        check=False,
+    )
+    fail_if(not state.get("visible") and "OnboardingActivity" not in top, "01_onboarding_shown", "onboarding not shown")
+    fail_if(
+        "无障碍" not in title + expl + top,
+        "01_onboarding_shown",
+        f"missing why-text title={title!r}",
+    )
+    fail_if(state.get("serviceEnabled") is True, "01_onboarding_shown", "service already enabled")
+    record("01_onboarding_shown", "PASS", f"title={title}")
+
+    tap_center(state.get("openCenter"), "openAccessibilityButton")
+    opened = False
+    for _ in range(10):
+        time.sleep(0.5)
+        if in_accessibility_settings():
+            opened = True
+            break
+    screenshot("01_onboarding_settings")
+    fail_if(not opened, "01_onboarding_opens_settings", f"not in a11y settings: {current_focus()}")
+    record("01_onboarding_opens_settings", "PASS", current_focus().strip()[:100])
+
+    state = {}
+    for _ in range(4):
+        adb_shell("input keyevent KEYCODE_BACK")
+        time.sleep(0.9)
+        state = onboarding_state()
+        if state.get("visible"):
+            break
+    if not state.get("visible"):
+        launch(f"{PKG}/.ui.MainActivity")
+        state = wait_onboarding(8)
+    screenshot("01_onboarding_retry")
+    fail_if(not state.get("visible"), "01_onboarding_retry", "onboarding missing after back")
+    fail_if(
+        not state.get("retryVisible") and "再去" not in (state.get("buttonText") or ""),
+        "01_onboarding_retry",
+        f"retry not shown state={state}",
+    )
+    record("01_onboarding_retry", "PASS", f"button={state.get('buttonText')}")
+
     enable_a11y()
+    launch(f"{PKG}/.ui.MainActivity")
+    time.sleep(1.5)
+    screenshot("01_onboarding_enabled")
+    focus = current_focus()
+    top = adb_shell(
+        "dumpsys activity top | grep -E 'MainActivity|OnboardingActivity|已启用|statusText' | head -40",
+        check=False,
+    )
+    fail_if("OnboardingActivity" in focus, "01_onboarding_continues", "still on onboarding after enable")
+    fail_if(
+        "MainActivity" not in focus and "MainActivity" not in top,
+        "01_onboarding_continues",
+        f"main not shown focus={focus}",
+    )
+    fail_if(not service_bound(), "01_onboarding_continues", "service not bound after enable")
+    record("01_onboarding_continues", "PASS", "main after enable")
 
     # 13 settings, no ANR. dumpsys activity top does not use UiAutomation.
     launch(f"{PKG}/.ui.SettingsActivity")

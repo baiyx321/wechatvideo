@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.wechatblocker.ui.BlockingOverlay
+import com.wechatblocker.ui.OnboardingActivity
 import org.json.JSONObject
 import java.io.File
 
@@ -37,6 +38,9 @@ class DebugOverlayReceiver : BroadcastReceiver() {
             }
             ACTION_DUMP -> {
                 writeDump(context)
+            }
+            ACTION_DUMP_ONBOARDING -> {
+                writeOnboardingDump(context)
             }
         }
     }
@@ -74,15 +78,38 @@ class DebugOverlayReceiver : BroadcastReceiver() {
             }.toString()
         }
         Log.i(TAG, "OVERLAY_DUMP $json")
+        writeJsonFile(context, DUMP_FILE, json)
+    }
+
+    private fun writeOnboardingDump(context: Context) {
+        val json = try {
+            OnboardingActivity.instance?.dumpStateJson()
+                ?: JSONObject().apply {
+                    put("ts", System.currentTimeMillis())
+                    put("visible", false)
+                }.toString()
+        } catch (e: Exception) {
+            Log.e(TAG, "组装 onboarding dump 失败", e)
+            JSONObject().apply {
+                put("ts", System.currentTimeMillis())
+                put("visible", false)
+                put("error", e.message ?: "dump failed")
+            }.toString()
+        }
+        Log.i(TAG, "ONBOARDING_DUMP $json")
+        writeJsonFile(context, ONBOARDING_DUMP_FILE, json)
+    }
+
+    private fun writeJsonFile(context: Context, name: String, json: String) {
         val files = listOfNotNull(
-            File(context.filesDir, DUMP_FILE),
-            context.getExternalFilesDir(null)?.let { File(it, DUMP_FILE) }
+            File(context.filesDir, name),
+            context.getExternalFilesDir(null)?.let { File(it, name) }
         )
         for (f in files) {
             try {
                 f.parentFile?.mkdirs()
                 f.writeText(json, Charsets.UTF_8)
-                Log.d(TAG, "wrote overlay dump to ${f.absolutePath} bytes=${f.length()}")
+                Log.d(TAG, "wrote $name to ${f.absolutePath} bytes=${f.length()}")
             } catch (e: Exception) {
                 Log.e(TAG, "写入 ${f.absolutePath} 失败", e)
             }
@@ -92,8 +119,10 @@ class DebugOverlayReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "DebugOverlayReceiver"
         private const val DUMP_FILE = "overlay_state.json"
+        private const val ONBOARDING_DUMP_FILE = "onboarding_state.json"
         const val ACTION_SET_TEXT = "com.wechatblocker.DEBUG_SET_OVERLAY_TEXT"
         const val ACTION_NIGHT = "com.wechatblocker.DEBUG_NIGHT_TRIGGER"
         const val ACTION_DUMP = "com.wechatblocker.DEBUG_DUMP_OVERLAY"
+        const val ACTION_DUMP_ONBOARDING = "com.wechatblocker.DEBUG_DUMP_ONBOARDING"
     }
 }

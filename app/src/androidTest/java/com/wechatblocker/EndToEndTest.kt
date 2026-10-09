@@ -48,11 +48,11 @@ class EndToEndTest {
         
         device.wait(Until.hasObject(By.pkg("com.wechatblocker").depth(0)), 5000)
         
-        // 查找主要元素
+        val onboarding = device.findObject(By.res("com.wechatblocker:id/openAccessibilityButton"))
         val statusText = device.findObject(By.res("com.wechatblocker:id/statusText"))
-        assertNotNull("状态文本应该存在", statusText)
-        
-        val enableButton = device.findObject(By.res("com.wechatblocker:id/enableButton"))
-        assertNotNull("启用按钮应该存在", enableButton)
+        assertTrue(
+            "应看到引导页或主界面状态",
+            onboarding != null || statusText != null
+        )
     }
 }

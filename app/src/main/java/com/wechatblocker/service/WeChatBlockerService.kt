@@ -54,6 +54,7 @@ class WeChatBlockerService : AccessibilityService() {
 
         private val OWN_UI_CLASSES = listOf(
             "MainActivity",
+            "OnboardingActivity",
             "SettingsActivity",
             "DebugActivity",
             "HistoryActivity"

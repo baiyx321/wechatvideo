@@ -24,6 +24,11 @@
         </activity>
         
         <activity
+            android:name=".ui.OnboardingActivity"
+            android:exported="false"
+            android:label="@string/onboarding_title" />
+
+        <activity
             android:name=".ui.SettingsActivity"
             android:exported="true"
             android:label="@string/settings" />
@@ -45,6 +50,7 @@
                 <action android:name="com.wechatblocker.DEBUG_SET_OVERLAY_TEXT" />
                 <action android:name="com.wechatblocker.DEBUG_NIGHT_TRIGGER" />
                 <action android:name="com.wechatblocker.DEBUG_DUMP_OVERLAY" />
+                <action android:name="com.wechatblocker.DEBUG_DUMP_ONBOARDING" />
             </intent-filter>
         </receiver>
 

@@ -58,11 +58,7 @@ else
   echo "ADBKeyBoard download failed; tests use debug broadcast for Chinese"
 fi
 
-echo "=== enable accessibility ==="
-adb shell settings put secure enabled_accessibility_services \
-  com.wechatblocker/com.wechatblocker.service.WeChatBlockerService
-adb shell settings put secure accessibility_enabled 1
-sleep 2
+echo "=== accessibility left off for onboarding test (python enables later via adb) ==="
 adb shell dumpsys accessibility | head -20 || true
 
 adb shell mkdir -p /sdcard/Download/blocker-ui
@@ -81,6 +77,7 @@ adb shell dumpsys accessibility > "$ART/dumpsys-accessibility.txt" || true
 adb shell dumpsys window windows > "$ART/dumpsys-window.txt" || true
 adb shell run-as com.wechatblocker cat files/overlay_state.json > "$ART/overlay_state.json" || true
 adb pull /sdcard/Android/data/com.wechatblocker/files/overlay_state.json "$ART/overlay_state.json" || true
+adb shell run-as com.wechatblocker cat files/onboarding_state.json > "$ART/onboarding_state.json" || true
 
 if [ -d "$ART/screenshots/blocker-ui" ]; then
   mv "$ART/screenshots/blocker-ui/"* "$ART/screenshots/" 2>/dev/null || true
